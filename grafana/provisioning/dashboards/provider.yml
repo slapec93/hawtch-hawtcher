@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: hawtch
+    type: file
+    disableDeletion: false
+    # Dashboards are code: edits made in the UI are overwritten on reload.
+    # Export the JSON back into grafana/dashboards/ to keep a change.
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

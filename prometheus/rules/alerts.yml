@@ -1,0 +1,72 @@
+# Hand-written alerts. Per-node reserve ceilings live in reserve.generated.yml.
+#
+# Deliberately sparse: v0's job is measurement, and an alert that fires on
+# normal mainnet variance trains you to ignore the whole file.
+
+groups:
+  - name: hawtch-liveness
+    interval: 30s
+    rules:
+      - alert: BeeNodeDown
+        expr: up{job="bee"} == 0
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: "{{ $labels.node }} is not scrapable"
+          description: "No successful scrape for 5m. Node down, or its API stopped responding."
+
+      - alert: SidecarDown
+        expr: up{job="sidecars"} == 0
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Sidecar {{ $labels.instance }} is not scrapable"
+          description: >-
+            A silent sidecar and a healthy network look identical on the
+            dashboards, so this must be alerted rather than inferred.
+
+  - name: hawtch-reserve
+    interval: 1m
+    rules:
+      - alert: ReserveNearCapacity
+        expr: hawtch:reserve_free_chunks / on(node) hawtch:reserve_capacity_chunks < 0.10
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "{{ $labels.node }} reserve above 90% of ceiling"
+          description: >-
+            Eviction and a storage-radius increase are close. Expected over time,
+            not a fault — but the radius step should be a recorded event, not a
+            surprise in the graphs.
+
+      - alert: ReserveFullWithinWeek
+        expr: hawtch:reserve_seconds_to_full < 604800
+        for: 1h
+        labels: { severity: info }
+        annotations:
+          summary: "{{ $labels.node }} projected to hit reserve ceiling in under 7d"
+          description: "Projection from the 6h fill slope; noisy during warmup."
+
+  - name: hawtch-host
+    interval: 30s
+    rules:
+      # v0 runs 8 nodes plus the observer on one box, so saturation is expected
+      # under load. This exists to mark data as contended, not to demand action.
+      - alert: HostDiskSaturated
+        expr: rate(node_disk_io_time_seconds_total[5m]) > 0.90
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Disk {{ $labels.device }} saturated (>90% busy)"
+          description: >-
+            Pullsync measurements taken during this window partly describe our
+            own I/O contention rather than the network (PLAN.md §4.1). Treat
+            affected samples as suspect.
+
+      - alert: HostDiskFillingUp
+        expr: node_filesystem_avail_bytes{mountpoint="/host"} / node_filesystem_size_bytes{mountpoint="/host"} < 0.15
+        for: 30m
+        labels: { severity: critical }
+        annotations:
+          summary: "Less than 15% disk free"
+          description: "Bee handles a full disk badly. Check reserve growth against §3 sizing."

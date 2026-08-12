@@ -1,0 +1,90 @@
+[
+  {
+    "targets": [
+      "hawtch-bee-1:1733"
+    ],
+    "labels": {
+      "node": "bee-1",
+      "role": "full",
+      "node_type": "full",
+      "neighborhood": "00000000"
+    }
+  },
+  {
+    "targets": [
+      "hawtch-bee-2:1735"
+    ],
+    "labels": {
+      "node": "bee-2",
+      "role": "full",
+      "node_type": "full",
+      "neighborhood": "01000000"
+    }
+  },
+  {
+    "targets": [
+      "hawtch-bee-3:1737"
+    ],
+    "labels": {
+      "node": "bee-3",
+      "role": "full",
+      "node_type": "full",
+      "neighborhood": "10000000"
+    }
+  },
+  {
+    "targets": [
+      "hawtch-bee-4:1739"
+    ],
+    "labels": {
+      "node": "bee-4",
+      "role": "full",
+      "node_type": "full",
+      "neighborhood": "11000000"
+    }
+  },
+  {
+    "targets": [
+      "hawtch-bee-5:1741"
+    ],
+    "labels": {
+      "node": "bee-5",
+      "role": "feed-upload",
+      "node_type": "light",
+      "neighborhood": ""
+    }
+  },
+  {
+    "targets": [
+      "hawtch-bee-6:1743"
+    ],
+    "labels": {
+      "node": "bee-6",
+      "role": "feed-download",
+      "node_type": "light",
+      "neighborhood": ""
+    }
+  },
+  {
+    "targets": [
+      "hawtch-bee-7:1745"
+    ],
+    "labels": {
+      "node": "bee-7",
+      "role": "data-upload",
+      "node_type": "light",
+      "neighborhood": ""
+    }
+  },
+  {
+    "targets": [
+      "hawtch-bee-8:1747"
+    ],
+    "labels": {
+      "node": "bee-8",
+      "role": "data-download",
+      "node_type": "light",
+      "neighborhood": ""
+    }
+  }
+]

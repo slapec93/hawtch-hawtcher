@@ -1,0 +1,198 @@
+{
+  "uid": "hawtch-fleet",
+  "title": "Hawtch · Fleet overview",
+  "tags": ["hawtch"],
+  "timezone": "browser",
+  "editable": true,
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "node",
+        "label": "Node",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+        "query": "label_values(up{job=\"bee\"}, node)",
+        "refresh": 1,
+        "multi": true,
+        "includeAll": true,
+        "current": { "text": "All", "value": "$__all" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Nodes up",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "targets": [{ "refId": "A", "expr": "sum(up{job=\"bee\"})", "instant": true }],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Connected peers — full vs light",
+      "description": "Two separate gauges, not one labelled metric. Kademlia's gauge is assumed to count full nodes only; cross-check against GET /peers before relying on it.",
+      "gridPos": { "h": 8, "w": 10, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "bee_kademlia_currently_connected_peers{node=~\"$node\"}",
+          "legendFormat": "{{node}} full"
+        },
+        {
+          "refId": "B",
+          "expr": "bee_lightnode_currently_connected_peers{node=~\"$node\"}",
+          "legendFormat": "{{node}} light"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 1, "fillOpacity": 5 } }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Reserve fill (% of ceiling)",
+      "description": "Ceiling is injected from fleet.yml — bee does not export it as a metric.",
+      "gridPos": { "h": 8, "w": 10, "x": 14, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * bee_localstore_reserve_size{node=~\"$node\"} / on(node) hawtch:reserve_capacity_chunks",
+          "legendFormat": "{{node}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percent", "min": 0, "max": 100, "custom": { "lineWidth": 2, "fillOpacity": 10 } },
+        "overrides": []
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Storage radius",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "targets": [
+        { "refId": "A", "expr": "bee_kademlia_current_storage_depth{node=~\"$node\"}", "legendFormat": "{{node}}", "instant": true }
+      ],
+      "fieldConfig": { "defaults": { "decimals": 0 }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Pullsync rate — chunks delivered/s",
+      "description": "In v0 all nodes share one disk. Read this against the disk-busy panel below: contended samples partly describe our own I/O, not the network.",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(bee_pullsync_chunks_delivered{node=~\"$node\"}[5m])",
+          "legendFormat": "{{node}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "cps", "custom": { "lineWidth": 1, "fillOpacity": 5 } }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Reserve runway (days to ceiling)",
+      "description": "Projection from the 6h fill slope. Meaningless during warmup and while the reserve is shrinking.",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "targets": [
+        { "refId": "A", "expr": "hawtch:reserve_seconds_to_full{node=~\"$node\"} / 86400", "legendFormat": "{{node}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "d", "custom": { "lineWidth": 2, "fillOpacity": 0 } }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Pushsync — success rate",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate(bee_pushsync_total_sent{node=~\"$node\"}[5m]) / clamp_min(rate(bee_pushsync_total_sent{node=~\"$node\"}[5m]) + rate(bee_pushsync_total_failed_send_attempts{node=~\"$node\"}[5m]), 0.0001)",
+          "legendFormat": "{{node}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Shallow receipt ratio",
+      "description": "shallowReceiptTolerance = maxAllowedDoubling - reserve_capacity_doubling, so this is only comparable between nodes sharing a doubling value. The generator enforces that.",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate(bee_pushsync_shallow_receipt{node=~\"$node\"}[15m]) / clamp_min(rate(bee_pushsync_total_sent{node=~\"$node\"}[15m]), 0.0001)",
+          "legendFormat": "{{node}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0 }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Per-container CPU (cores)",
+      "description": "Attributable per node, unlike host load. This is the CPU signal to correlate pullsync against.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (node) (rate(container_cpu_usage_seconds_total{node=~\"$node\"}[5m]))",
+          "legendFormat": "{{node}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(container_cpu_usage_seconds_total{name=~\"hawtch-(prometheus|grafana|cadvisor|node-exporter)\"}[5m]))",
+          "legendFormat": "observer stack (subtract me)"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "lineWidth": 1, "fillOpacity": 5 } }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Host load & disk busy — v0 confound watch",
+      "description": "Host load is NOT attributable to a single node in v0. Use it as a saturation signal only. Disk busy above ~90% marks pullsync samples as contended.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "targets": [
+        { "refId": "A", "expr": "node_load1", "legendFormat": "load1" },
+        { "refId": "B", "expr": "node_load15", "legendFormat": "load15" },
+        {
+          "refId": "C",
+          "expr": "100 * rate(node_disk_io_time_seconds_total[5m])",
+          "legendFormat": "disk busy % {{device}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 1, "fillOpacity": 0 } },
+        "overrides": [
+          {
+            "matcher": { "id": "byRegexp", "options": "disk busy.*" },
+            "properties": [
+              { "id": "custom.axisPlacement", "value": "right" },
+              { "id": "unit", "value": "percent" },
+              { "id": "custom.fillOpacity", "value": 10 }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

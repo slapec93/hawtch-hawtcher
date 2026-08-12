@@ -1,0 +1,17 @@
+{
+  "name": "hawtch-hawtcher",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Monitoring suite for Swarm mainnet, driven by an 8-node Bee probe fleet",
+  "scripts": {
+    "generate": "node tools/generate.mjs",
+    "addresses": "node tools/addresses.mjs"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

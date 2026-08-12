@@ -1,0 +1,12 @@
+# Secrets: keystore password, RPC endpoint, grafana admin password.
+.env
+
+# Keystore archives — these are wallets.
+backups/
+
+node_modules/
+
+# Generated from fleet.yml. Committed deliberately: reviewing a fleet change
+# means seeing the rendered diff, and it keeps the deploy host from needing node.
+# Regenerate with `make generate`; never hand-edit.
+!**/*.generated.*

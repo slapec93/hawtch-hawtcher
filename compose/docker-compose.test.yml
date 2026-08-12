@@ -1,0 +1,80 @@
+# Local-test stack. Standalone — do not merge with docker-compose.observer.yml.
+#
+# Runs the real observer stack against the local bee-factory cluster instead of
+# mainnet nodes. Container names match the production stack so the Grafana
+# datasource provisioning works unchanged, which also means the two stacks must
+# not run at the same time on one host.
+#
+#   make test-up      start
+#   make test-check   verify targets are up and metrics are landing
+#   make test-down    stop and discard the test TSDB
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: hawtch-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Short retention: this data is disposable.
+      - --storage.tsdb.retention.time=2d
+      - --web.enable-lifecycle
+    volumes:
+      - ../test/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/rules:/etc/prometheus/rules:ro
+      - ../test/rules:/etc/prometheus/rules-test:ro
+    ports:
+      - "127.0.0.1:9090:9090"
+    extra_hosts:
+      # Docker Desktop provides this already; the mapping makes it work on Linux too.
+      - "host.docker.internal:host-gateway"
+    networks: [hawtch-test]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: hawtch-grafana
+    restart: unless-stopped
+    depends_on: [prometheus]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "127.0.0.1:3000:3000"
+    networks: [hawtch-test]
+
+  # On Docker Desktop these two observe the Linux VM, not macOS, and cAdvisor may
+  # not start at all. They are included so the container/host panels have a
+  # chance of populating; if they fail locally that is expected, and not a
+  # problem with the production config.
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: hawtch-cadvisor
+    restart: unless-stopped
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks: [hawtch-test]
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: hawtch-node-exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.rootfs=/host
+    volumes:
+      # Plain :ro, not :ro,rslave as in production — Docker Desktop rejects
+      # slave propagation ("path / is mounted on / but it is not a shared or
+      # slave mount"). Keep rslave on the real Linux host.
+      - /:/host:ro
+    networks: [hawtch-test]
+
+networks:
+  hawtch-test:

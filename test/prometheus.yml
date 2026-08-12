@@ -1,0 +1,57 @@
+# Local-test Prometheus config. NOT for deployment — see prometheus/prometheus.yml.
+#
+# Scrapes the running bee-factory cluster instead of mainnet nodes, so the whole
+# pipeline (scrape -> labels -> recording rules -> dashboards -> alerts) can be
+# exercised without funding anything or waiting for a mainnet sync.
+#
+# Caveat when reading the result: factory nodes run a private network with a tiny
+# reserve and no real traffic. Values are structurally valid but not
+# representative of mainnet. This validates plumbing, not measurements.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    fleet: hawtch-local-test
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+  - /etc/prometheus/rules-test/*.yml
+
+scrape_configs:
+  # bee-factory publishes each node's API on the host; host.docker.internal
+  # reaches back out of the container (mapped to host-gateway on Linux).
+  - job_name: bee
+    static_configs:
+      - targets: ["host.docker.internal:1633"]
+        labels: { node: factory-0, role: full, node_type: full, neighborhood: "" }
+      - targets: ["host.docker.internal:1635"]
+        labels: { node: factory-1, role: full, node_type: full, neighborhood: "" }
+      - targets: ["host.docker.internal:1637"]
+        labels: { node: factory-2, role: full, node_type: full, neighborhood: "" }
+      - targets: ["host.docker.internal:1639"]
+        labels: { node: factory-3, role: full, node_type: full, neighborhood: "" }
+      - targets: ["host.docker.internal:1641"]
+        labels: { node: factory-4, role: full, node_type: full, neighborhood: "" }
+
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["hawtch-cadvisor:8080"]
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: "container_(cpu_usage_seconds_total|memory_working_set_bytes|fs_reads_bytes_total|fs_writes_bytes_total|network_receive_bytes_total|network_transmit_bytes_total|spec_cpu_quota|last_seen)"
+        action: keep
+      - source_labels: [container_label_hawtch_node]
+        target_label: node
+        action: replace
+      - source_labels: [container_label_hawtch_role]
+        target_label: role
+        action: replace
+
+  - job_name: node
+    static_configs:
+      - targets: ["hawtch-node-exporter:9100"]
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

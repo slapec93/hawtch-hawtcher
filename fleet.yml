@@ -1,0 +1,102 @@
+# hawtch-hawtcher fleet definition — the single source of truth.
+#
+# Everything else is derived from this file by `tools/generate.mjs`:
+#   - compose/docker-compose.bees.generated.yml   (one service per enabled node)
+#   - prometheus/targets/bee.generated.json       (scrape targets + labels)
+#   - prometheus/rules/reserve.generated.yml      (per-node reserve ceilings)
+#
+# Never hand-edit the *.generated.* files. Run `make generate`.
+
+version: 1
+
+# Pin the image. Verify against the current mainnet release before deploying.
+bee_image: ethersphere/bee:2.8.1
+
+# Docker network shared by nodes, exporters and the observer stack.
+network: hawtch
+
+# Base for automatic port assignment: node i gets api = port_base + 2i, p2p + 1.
+#
+# NOT bee's default 1633. bee-factory publishes 1633 + 2n for n in 0..4 (so
+# 1633-1642), and overlapping with it is actively dangerous: the API collision is
+# silent for read-only tools, so `make addresses` would report a *factory* node's
+# wallet as if it were ours and you would fund the wrong node. The generator
+# rejects any fleet whose ports fall in the factory range.
+#
+# 1733-1748 (8 nodes) was checked against the lists that actually bite:
+#   - Chromium's restricted ports: nearest are 1719/1720/1723, so we are clear.
+#     Ports on that list are refused by browsers with ERR_UNSAFE_PORT.
+#   - Linux's ephemeral range (32768+), where binds can lose a race to an
+#     outbound connection and fail intermittently. Well below it.
+#   - IANA registrations: every port in 1733-1748 is registered to some legacy
+#     or vendor service (siipat, cisco-net-mgmt, oracle-em1, ...). Registration
+#     blocks nothing and none of these run on a dedicated host, so it is noted
+#     rather than avoided — the space is too crowded to find a gap.
+# The generator warns on the first two if you change this, so the checks do not
+# rely on anyone re-reading this comment.
+port_base: 1733
+
+defaults:
+  # 1,000,000 chunks ~= 4 GiB (bee's own default).
+  cache_capacity: 1000000
+  verbosity: info
+  # 0 or 1 only (maxAllowedDoubling = 1).
+  # MUST be uniform across the full nodes: it also sets
+  # shallowReceiptTolerance = maxAllowedDoubling - doubling, so mixing values
+  # makes shallow-receipt numbers incomparable between nodes.
+  reserve_capacity_doubling: 0
+  # Staking/redistribution off for v0: a staking node runs reserve sampling and
+  # joins the redistribution game, and that CPU would land in the
+  # pullsync-vs-CPU correlation. Turn on deliberately, not by default.
+  storage_incentives_enable: false
+
+# api_port / p2p_port are assigned automatically from 1633 upward when omitted
+# (node i gets api = 1633 + 2i, p2p = api + 1). Container and host ports are
+# kept identical so BEE_NAT_ADDR and the scrape target agree.
+#
+# target_neighborhood: binary prefix for initial overlay mining. Leaving this
+# empty is NOT the same as omitting the concern — bee would then ask
+# api.swarmscan.io and mine into a deliberately under-replicated neighborhood,
+# non-reproducibly. See PLAN.md §1.
+#
+# NOTE: the four prefixes below are evenly spaced placeholders. They give wide
+# separation in the address space but were not chosen against live mainnet
+# topology — see PLAN.md §12 before treating them as final.
+nodes:
+  - name: bee-1
+    role: full
+    enabled: true
+    target_neighborhood: "00000000"
+
+  - name: bee-2
+    role: full
+    enabled: true
+    target_neighborhood: "01000000"
+
+  - name: bee-3
+    role: full
+    enabled: true
+    target_neighborhood: "10000000"
+
+  - name: bee-4
+    role: full
+    enabled: true
+    target_neighborhood: "11000000"
+
+  # Feed pair — beefeeder sidecar writes via the uploader, reads via the downloader.
+  - name: bee-5
+    role: feed-upload
+    enabled: true
+
+  - name: bee-6
+    role: feed-download
+    enabled: true
+
+  # Content-addressed pair — latency sidecar uploads via 7, downloads via 8.
+  - name: bee-7
+    role: data-upload
+    enabled: true
+
+  - name: bee-8
+    role: data-download
+    enabled: true

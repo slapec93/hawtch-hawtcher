@@ -1,0 +1,26 @@
+# Reserve ceilings for the local bee-factory nodes.
+#
+# In production these are generated from fleet.yml. Here they are hand-written
+# for the factory cluster so the reserve panels and rules have something to join
+# against. Factory nodes run default doubling (0), so the ceiling is
+# 1 << 22 = 4194304 chunks.
+
+groups:
+  - name: hawtch-local-test-ceilings
+    interval: 1m
+    rules:
+      - record: hawtch:reserve_capacity_chunks
+        expr: "4194304"
+        labels: { node: factory-0 }
+      - record: hawtch:reserve_capacity_chunks
+        expr: "4194304"
+        labels: { node: factory-1 }
+      - record: hawtch:reserve_capacity_chunks
+        expr: "4194304"
+        labels: { node: factory-2 }
+      - record: hawtch:reserve_capacity_chunks
+        expr: "4194304"
+        labels: { node: factory-3 }
+      - record: hawtch:reserve_capacity_chunks
+        expr: "4194304"
+        labels: { node: factory-4 }

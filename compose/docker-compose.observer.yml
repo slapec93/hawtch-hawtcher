@@ -1,0 +1,84 @@
+# Observer stack: collection, storage, visualisation, host/container metrics.
+#
+# In v0 this runs on the same host as the bee nodes. That contaminates the
+# CPU/load measurements it is taking (PLAN.md §4.3), which is why the stack
+# scrapes its own containers via cAdvisor — so its cost is visible and can be
+# subtracted rather than silently attributed to bee.
+
+services:
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: hawtch-prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # Reserve-runway extrapolation needs a long baseline; 90d also covers
+      # radius-increase events, which are rare.
+      - --storage.tsdb.retention.time=90d
+      - --web.enable-lifecycle
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/rules:/etc/prometheus/rules:ro
+      - ../prometheus/targets:/etc/prometheus/targets:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    networks: [hawtch]
+
+  grafana:
+    image: grafana/grafana:11.2.0
+    container_name: hawtch-grafana
+    restart: unless-stopped
+    depends_on: [prometheus]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      # Loopback only. Reach it via SSH tunnel:
+      #   ssh -L 3000:localhost:3000 <host>
+      - "127.0.0.1:3000:3000"
+    networks: [hawtch]
+
+  # Per-container CPU/memory/IO. This is what makes load attributable to an
+  # individual bee node — host load alone cannot be (PLAN.md §4.2).
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: hawtch-cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks: [hawtch]
+
+  # Host CPU, load, RAM and — critically for v0 — disk saturation, so pullsync
+  # numbers can be read against the I/O contention that shaped them (§4.1).
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: hawtch-node-exporter
+    restart: unless-stopped
+    pid: host
+    command:
+      - --path.rootfs=/host
+      - --collector.processes
+    volumes:
+      - /:/host:ro,rslave
+    networks: [hawtch]
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  hawtch:
+    external: true

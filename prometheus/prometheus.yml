@@ -1,0 +1,54 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    fleet: hawtch-hawtcher
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+scrape_configs:
+  # Bee nodes. Targets and their node/role/neighborhood labels are generated
+  # from fleet.yml, so adding a node is a fleet.yml edit plus `make generate`.
+  - job_name: bee
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/bee.generated.json
+        refresh_interval: 30s
+
+  # Per-container resource use — the attributable half of the CPU story.
+  - job_name: cadvisor
+    static_configs:
+      - targets: ["hawtch-cadvisor:8080"]
+    metric_relabel_configs:
+      # cAdvisor is verbose; keep the families the dashboards actually use.
+      - source_labels: [__name__]
+        regex: "container_(cpu_usage_seconds_total|memory_working_set_bytes|fs_reads_bytes_total|fs_writes_bytes_total|network_receive_bytes_total|network_transmit_bytes_total|spec_cpu_quota|last_seen)"
+        action: keep
+      # Map cAdvisor's container labels onto our own `node` label so bee metrics
+      # and container metrics join cleanly in one query.
+      - source_labels: [container_label_hawtch_node]
+        target_label: node
+        action: replace
+      - source_labels: [container_label_hawtch_role]
+        target_label: role
+        action: replace
+
+  # Host CPU, load, RAM, and disk saturation (v0's key confound — PLAN.md §4.1).
+  - job_name: node
+    static_configs:
+      - targets: ["hawtch-node-exporter:9100"]
+
+  # Prometheus watching itself. Cheap, and it bounds how much of the host's load
+  # is the observer's own doing.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # Sidecars land here once built (phase 4). They expose /metrics like anything
+  # else; nothing about collection changes.
+  - job_name: sidecars
+    file_sd_configs:
+      - files:
+          - /etc/prometheus/targets/sidecars.json
+        refresh_interval: 30s
