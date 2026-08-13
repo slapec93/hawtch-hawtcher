@@ -20,14 +20,16 @@ ENABLED := $(shell cat compose/enabled-nodes.generated.txt 2>/dev/null)
 
 TEST_COMPOSE := docker compose -p hawtch-test -f compose/docker-compose.test.yml
 
-.PHONY: help install generate network volumes require-env preflight restore destroy up up-observer up-bees up-staggered up-sidecars down stop ps logs validate addresses backup-keys reload-prometheus test-up test-check test-down test-logs test-probes
+.PHONY: help install generate check-generated firewall network volumes require-env preflight restore destroy up up-observer up-bees up-staggered up-sidecars down stop ps logs validate addresses backup-keys reload-prometheus test-up test-check test-down test-logs test-probes
 
 help:
 	@echo "Setup"
 	@echo "  install            npm install (js-yaml, for the generator)"
 	@echo "  generate           render fleet.yml -> compose + prometheus config"
 	@echo "  validate           generate, then check the merged compose file"
+	@echo "  check-generated    assert committed config matches fleet.yml (no Node needed)"
 	@echo "  network            create the shared docker network"
+	@echo "  firewall           open only the P2P ports, from fleet.yml"
 	@echo "  preflight          assert no fleet port is already bound"
 	@echo ""
 	@echo "Run"
@@ -63,8 +65,38 @@ help:
 install:
 	npm install
 
+GENERATED := \
+	compose/docker-compose.bees.generated.yml \
+	compose/docker-compose.sidecars.generated.yml \
+	compose/enabled-nodes.generated.txt \
+	compose/ports.generated.txt \
+	compose/volumes.generated.txt \
+	prometheus/targets/bee.generated.json \
+	prometheus/targets/sidecars.generated.json \
+	prometheus/rules/reserve.generated.yml
+
 generate:
 	node tools/generate.mjs
+
+# Asserts the committed generated files exist and are not stale, WITHOUT running
+# the generator. This is what keeps the deploy host free of a Node toolchain:
+# generation happens on a workstation and the output is committed.
+check-generated:
+	@for f in $(GENERATED); do \
+		test -f $$f || { \
+			echo "missing $$f"; \
+			echo "Run 'make generate' on a machine with Node, then commit the result."; \
+			exit 1; }; \
+	done
+	@stale=""; for f in $(GENERATED); do \
+		if [ fleet.yml -nt $$f ]; then stale="$$stale $$f"; fi; \
+	done; \
+	if [ -n "$$stale" ]; then \
+		echo "fleet.yml is newer than:$$stale"; \
+		echo "Run 'make generate' and commit, or the deployment will not match fleet.yml."; \
+		exit 1; \
+	fi
+	@echo "  ✓ generated files present and current"
 
 validate: generate
 	@# Shell env beats --env-file, so this satisfies the deliberate `:?` guard on
@@ -80,12 +112,28 @@ network:
 # Node volumes are declared `external` in the generated compose file, which means
 # compose will neither create nor destroy them — `down -v` cannot touch a funded
 # wallet. The trade-off is that they must be created here, up front.
-volumes: generate
+volumes: check-generated
 	@for v in $$(cat compose/volumes.generated.txt); do \
 		docker volume inspect $$v >/dev/null 2>&1 \
 			|| { docker volume create --label hawtch.keep=true $$v >/dev/null && echo "  created $$v"; }; \
 	done
 	@echo "  ✓ $$(wc -w < compose/volumes.generated.txt | tr -d ' ') node volume(s) present"
+
+# Opens the P2P ports, and only those, from the generated port list — so the
+# firewall cannot drift from fleet.yml. API ports are deliberately never opened:
+# bee's API is unauthenticated and is bound to loopback.
+firewall: check-generated
+	@command -v ufw >/dev/null || { echo "ufw not installed (run deploy/bootstrap.sh)"; exit 1; }
+	@while read -r name kind port; do \
+		if [ "$$kind" = "p2p" ]; then \
+			sudo ufw allow "$$port"/tcp comment "hawtch $$name p2p" >/dev/null \
+				&& echo "  allowed $$port/tcp  ($$name p2p)"; \
+		fi; \
+	done < compose/ports.generated.txt
+	@echo
+	@echo "API ports left closed on purpose — bee's API is unauthenticated and"
+	@echo "bound to 127.0.0.1. Reach Grafana/Prometheus over an SSH tunnel:"
+	@echo "  ssh -L 3000:localhost:3000 -L 9090:localhost:9090 <host>"
 
 require-env:
 	@test -f .env || { \
@@ -94,7 +142,7 @@ require-env:
 		exit 1; \
 	}
 
-up-observer: require-env generate network volumes
+up-observer: require-env check-generated network volumes
 	$(COMPOSE) up -d prometheus grafana cadvisor node-exporter
 
 # Refuses to start if any fleet port is already bound — most likely a stray
@@ -117,14 +165,14 @@ preflight:
 		echo "  ✓ all fleet ports free"; \
 	fi
 
-up-bees: require-env generate network volumes preflight
+up-bees: require-env check-generated network volumes preflight
 	$(COMPOSE) up -d $(ENABLED)
 
 # Full nodes pull-syncing simultaneously against one disk bottleneck each other,
 # which corrupts the pullsync measurement itself (PLAN.md 4.1). Starting them
 # one at a time, waiting for each to begin syncing, keeps that contention out of
 # the warmup data.
-up-staggered: require-env generate network volumes preflight
+up-staggered: require-env check-generated network volumes preflight
 	@for n in $(ENABLED); do \
 		echo "==> starting $$n"; \
 		$(COMPOSE) up -d $$n; \
@@ -134,7 +182,7 @@ up-staggered: require-env generate network volumes preflight
 
 # Probes need their paired nodes running and funded, and a postage batch. Start
 # them after the fleet is up, not alongside it.
-up-sidecars: require-env generate network
+up-sidecars: require-env check-generated network
 	$(COMPOSE) up -d --build $(shell sed -n 's/^  \(sidecar-[a-z]*\):$$/\1/p' compose/docker-compose.sidecars.generated.yml 2>/dev/null)
 
 up: up-observer up-staggered
@@ -239,7 +287,7 @@ destroy:
 	$(COMPOSE) down
 	@for v in $$(cat compose/volumes.generated.txt); do docker volume rm $$v; done
 
-reload-prometheus: generate
+reload-prometheus: check-generated
 	@curl -fsS -X POST http://127.0.0.1:9090/-/reload && echo "prometheus reloaded"
 
 # ---- local test -------------------------------------------------------------
