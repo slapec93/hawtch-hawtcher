@@ -4,6 +4,8 @@ services:
     image: ${BEE_IMAGE}
     container_name: hawtch-bee-1
     restart: unless-stopped
+    command:
+      - start
     environment:
       BEE_API_ADDR: ':1733'
       BEE_P2P_ADDR: ':1734'
@@ -33,6 +35,8 @@ services:
     image: ${BEE_IMAGE}
     container_name: hawtch-bee-2
     restart: unless-stopped
+    command:
+      - start
     environment:
       BEE_API_ADDR: ':1735'
       BEE_P2P_ADDR: ':1736'
@@ -62,6 +66,8 @@ services:
     image: ${BEE_IMAGE}
     container_name: hawtch-bee-5
     restart: unless-stopped
+    command:
+      - start
     environment:
       BEE_API_ADDR: ':1741'
       BEE_P2P_ADDR: ':1742'
@@ -89,6 +95,8 @@ services:
     image: ${BEE_IMAGE}
     container_name: hawtch-bee-6
     restart: unless-stopped
+    command:
+      - start
     environment:
       BEE_API_ADDR: ':1743'
       BEE_P2P_ADDR: ':1744'
@@ -116,6 +124,8 @@ services:
     image: ${BEE_IMAGE}
     container_name: hawtch-bee-7
     restart: unless-stopped
+    command:
+      - start
     environment:
       BEE_API_ADDR: ':1745'
       BEE_P2P_ADDR: ':1746'
@@ -143,6 +153,8 @@ services:
     image: ${BEE_IMAGE}
     container_name: hawtch-bee-8
     restart: unless-stopped
+    command:
+      - start
     environment:
       BEE_API_ADDR: ':1747'
       BEE_P2P_ADDR: ':1748'

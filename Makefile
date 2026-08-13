@@ -20,7 +20,7 @@ ENABLED := $(shell cat compose/enabled-nodes.generated.txt 2>/dev/null)
 
 TEST_COMPOSE := docker compose -p hawtch-test -f compose/docker-compose.test.yml
 
-.PHONY: help install generate check-generated firewall firewall-grafana network volumes require-env preflight restore destroy up up-observer up-bees up-staggered up-sidecars down stop ps logs validate addresses backup-keys reload-prometheus test-up test-check test-down test-logs test-probes
+.PHONY: help install generate check-generated check-env firewall firewall-grafana network volumes require-env preflight restore destroy up up-observer up-bees up-staggered up-sidecars down stop ps logs validate addresses backup-keys reload-prometheus test-up test-check test-down test-logs test-probes
 
 help:
 	@echo "Setup"
@@ -28,6 +28,7 @@ help:
 	@echo "  generate           render fleet.yml -> compose + prometheus config"
 	@echo "  validate           generate, then check the merged compose file"
 	@echo "  check-generated    assert committed config matches fleet.yml (no Node needed)"
+	@echo "  check-env          validate PUBLIC_IP, BEE_PASSWORD and the RPC chain id"
 	@echo "  network            create the shared docker network"
 	@echo "  firewall           open only the P2P ports, from fleet.yml"
 	@echo "  firewall-grafana   open the Grafana port (opt-in; see .env)"
@@ -201,14 +202,52 @@ preflight:
 		echo "  ✓ all fleet ports free"; \
 	fi
 
-up-bees: require-env check-generated network volumes preflight
+# Validates the two .env values that produce cryptic, hard-to-diagnose failures.
+# Both were hit for real during the first deployment:
+#   - an Ethereum-mainnet RPC (chain 1) where bee needs Gnosis (chain 100)
+#   - a loopback PUBLIC_IP, which bee rejects outright as a NAT address
+check-env: require-env
+	@rpc=$$(sed -n 's/^GNOSIS_RPC_ENDPOINT=//p' .env | tail -1); \
+	ip=$$(sed -n 's/^PUBLIC_IP=//p' .env | tail -1); \
+	pw=$$(sed -n 's/^BEE_PASSWORD=//p' .env | tail -1); \
+	fail=0; \
+	if [ -z "$$pw" ]; then echo "  ✗ BEE_PASSWORD is empty — bee will not start"; fail=1; \
+	else echo "  ✓ BEE_PASSWORD set"; fi; \
+	if [ -z "$$ip" ]; then \
+		echo "  ✗ PUBLIC_IP is empty"; fail=1; \
+	elif echo "$$ip" | grep -qE '^(127\.|::1$$|localhost$$)'; then \
+		echo "  ✗ PUBLIC_IP=$$ip is loopback — bee rejects it: 'loopback address is not a valid address'"; fail=1; \
+	elif echo "$$ip" | grep -qE '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)'; then \
+		echo "  ! PUBLIC_IP=$$ip is a private address — correct only if peers reach the host at it;"; \
+		echo "    behind NAT, set the external address and forward the P2P ports"; \
+	else \
+		echo "  ✓ PUBLIC_IP=$$ip"; \
+	fi; \
+	if [ -z "$$rpc" ]; then \
+		echo "  ✗ GNOSIS_RPC_ENDPOINT is empty — bee will not start"; fail=1; \
+	else \
+		chain=$$(curl -s -m 10 -X POST -H 'Content-Type: application/json' \
+			--data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "$$rpc" \
+			| grep -oE '"result":"0x[0-9a-fA-F]+"' | grep -oE '0x[0-9a-fA-F]+'); \
+		if [ -z "$$chain" ]; then \
+			echo "  ✗ RPC $$rpc did not answer eth_chainId"; fail=1; \
+		elif [ "$$chain" != "0x64" ]; then \
+			echo "  ✗ RPC is chain $$chain; Swarm needs Gnosis Chain (0x64 = 100)."; \
+			echo "    An Ethereum-mainnet endpoint (0x1) is the usual mistake."; fail=1; \
+		else \
+			echo "  ✓ RPC is Gnosis Chain (0x64)"; \
+		fi; \
+	fi; \
+	test "$$fail" = "0" || { echo; echo "Fix .env before starting nodes."; exit 1; }
+
+up-bees: require-env check-env check-generated network volumes preflight
 	$(COMPOSE) up -d $(ENABLED)
 
 # Full nodes pull-syncing simultaneously against one disk bottleneck each other,
 # which corrupts the pullsync measurement itself (PLAN.md 4.1). Starting them
 # one at a time, waiting for each to begin syncing, keeps that contention out of
 # the warmup data.
-up-staggered: require-env check-generated network volumes preflight
+up-staggered: require-env check-env check-generated network volumes preflight
 	@for n in $(ENABLED); do \
 		echo "==> starting $$n"; \
 		$(COMPOSE) up -d $$n; \

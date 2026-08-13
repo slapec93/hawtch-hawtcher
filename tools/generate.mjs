@@ -148,6 +148,10 @@ for (const node of enabled) {
     image: '${BEE_IMAGE}',
     container_name: `hawtch-${node.name}`,
     restart: 'unless-stopped',
+    // The image is ENTRYPOINT ["bee"] with no CMD, so the subcommand must be
+    // supplied. Without it the container runs `bee` bare, prints its help text
+    // and exits — which looks like a crash loop with no useful error.
+    command: ['start'],
     environment: env,
     volumes: [`${node.name}-data:/home/bee/.bee`],
     ports: [
