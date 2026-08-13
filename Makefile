@@ -20,7 +20,7 @@ ENABLED := $(shell cat compose/enabled-nodes.generated.txt 2>/dev/null)
 
 TEST_COMPOSE := docker compose -p hawtch-test -f compose/docker-compose.test.yml
 
-.PHONY: help install generate check-generated firewall network volumes require-env preflight restore destroy up up-observer up-bees up-staggered up-sidecars down stop ps logs validate addresses backup-keys reload-prometheus test-up test-check test-down test-logs test-probes
+.PHONY: help install generate check-generated firewall firewall-grafana network volumes require-env preflight restore destroy up up-observer up-bees up-staggered up-sidecars down stop ps logs validate addresses backup-keys reload-prometheus test-up test-check test-down test-logs test-probes
 
 help:
 	@echo "Setup"
@@ -30,6 +30,7 @@ help:
 	@echo "  check-generated    assert committed config matches fleet.yml (no Node needed)"
 	@echo "  network            create the shared docker network"
 	@echo "  firewall           open only the P2P ports, from fleet.yml"
+	@echo "  firewall-grafana   open the Grafana port (opt-in; see .env)"
 	@echo "  preflight          assert no fleet port is already bound"
 	@echo ""
 	@echo "Run"
@@ -134,6 +135,31 @@ firewall: check-generated
 	@echo "API ports left closed on purpose — bee's API is unauthenticated and"
 	@echo "bound to 127.0.0.1. Reach Grafana/Prometheus over an SSH tunnel:"
 	@echo "  ssh -L 3000:localhost:3000 -L 9090:localhost:9090 <host>"
+
+# Opens the Grafana port, honouring GRAFANA_ALLOW_CIDR if set. Separate from
+# `firewall` because exposing a dashboard is a deliberate decision, not part of
+# routine setup.
+firewall-grafana: require-env
+	@command -v ufw >/dev/null || { echo "ufw not installed (run deploy/bootstrap.sh)"; exit 1; }
+	@bind=$$(sed -n 's/^GRAFANA_BIND=//p' .env | tail -1); \
+	port=$$(sed -n 's/^GRAFANA_PORT=//p' .env | tail -1); port=$${port:-3000}; \
+	cidr=$$(sed -n 's/^GRAFANA_ALLOW_CIDR=//p' .env | tail -1); \
+	if [ "$$bind" = "127.0.0.1" ] || [ -z "$$bind" ]; then \
+		echo "GRAFANA_BIND is $${bind:-127.0.0.1} (loopback) — nothing to open."; \
+		echo "Set GRAFANA_BIND=0.0.0.0 in .env and re-run 'make up-observer' first."; \
+		exit 0; \
+	fi; \
+	if [ -n "$$cidr" ]; then \
+		sudo ufw allow from "$$cidr" to any port "$$port" proto tcp comment "hawtch grafana" >/dev/null \
+			&& echo "  allowed $$port/tcp from $$cidr only"; \
+	else \
+		sudo ufw allow "$$port"/tcp comment "hawtch grafana (any source)" >/dev/null \
+			&& echo "  allowed $$port/tcp from ANY source"; \
+		echo; \
+		echo "  WARNING: open to the internet over plain HTTP. The admin password"; \
+		echo "  crosses the network in cleartext. Set GRAFANA_ALLOW_CIDR, or put"; \
+		echo "  Grafana behind TLS — see DEPLOY.md."; \
+	fi
 
 require-env:
 	@test -f .env || { \

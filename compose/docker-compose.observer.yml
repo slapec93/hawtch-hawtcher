@@ -23,6 +23,10 @@ services:
       - ../prometheus/targets:/etc/prometheus/targets:ro
       - prometheus-data:/prometheus
     ports:
+      # Loopback ONLY, and deliberately not configurable. Prometheus has no
+      # authentication whatsoever: anyone who can reach this port can read every
+      # metric and enumerate the fleet. Use Grafana as the front door, or an SSH
+      # tunnel for ad-hoc PromQL.
       - "127.0.0.1:9090:9090"
     networks: [hawtch]
 
@@ -34,14 +38,23 @@ services:
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD in .env}
       GF_USERS_ALLOW_SIGN_UP: "false"
+      # Hardening that matters once the port is reachable from outside.
+      GF_SECURITY_COOKIE_SECURE: ${GRAFANA_COOKIE_SECURE:-false}
+      GF_SECURITY_STRICT_TRANSPORT_SECURITY: ${GRAFANA_COOKIE_SECURE:-false}
+      GF_SECURITY_CONTENT_SECURITY_POLICY: "true"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
     volumes:
       - ../grafana/provisioning:/etc/grafana/provisioning:ro
       - ../grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
-      # Loopback only. Reach it via SSH tunnel:
-      #   ssh -L 3000:localhost:3000 <host>
-      - "127.0.0.1:3000:3000"
+      # Defaults to loopback (reach it with `ssh -L 3000:localhost:3000 <host>`).
+      # Set GRAFANA_BIND=0.0.0.0 in .env to expose it, then `make firewall-grafana`.
+      # Grafana has its own authentication, so this is a defensible thing to
+      # expose — unlike Prometheus below.
+      - "${GRAFANA_BIND:-127.0.0.1}:${GRAFANA_PORT:-3000}:3000"
     networks: [hawtch]
 
   # Per-container CPU/memory/IO. This is what makes load attributable to an

@@ -25,6 +25,44 @@ fi
 
 say() { printf '\n== %s\n' "$1"; }
 
+# Fail up front on an unsupported distro rather than halfway through apt. The
+# Docker repo path and the package names below are Debian-family specific.
+say "os"
+if [ ! -r /etc/os-release ]; then
+  echo "no /etc/os-release — cannot identify this distro" >&2
+  exit 1
+fi
+# shellcheck disable=SC1091
+. /etc/os-release
+echo "${PRETTY_NAME:-$NAME $VERSION_ID}  (id=$ID, codename=${VERSION_CODENAME:-none})"
+echo "kernel: $(uname -srm)"
+
+case "$ID" in
+  ubuntu) DOCKER_REPO_DISTRO=ubuntu ;;
+  debian) DOCKER_REPO_DISTRO=debian ;;
+  *)
+    cat >&2 <<EOF
+
+Unsupported distro: $ID
+
+This script targets Ubuntu or Debian: it uses apt, Docker's Debian-family
+repository, ufw and chrony. On RHEL-family systems (rocky, almalinux, rhel,
+fedora) the equivalents are dnf, Docker's centos repo, firewalld and chronyd —
+the steps map over, but the commands differ.
+
+The suite itself only needs Docker + Compose v2, so installing those by hand and
+skipping this script is a valid path. Then: make firewall expects ufw, and
+make preflight expects nc.
+EOF
+    exit 1
+    ;;
+esac
+
+if [ -z "${VERSION_CODENAME:-}" ]; then
+  echo "no VERSION_CODENAME in /etc/os-release — cannot build the Docker apt entry" >&2
+  exit 1
+fi
+
 say "packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
@@ -43,11 +81,11 @@ chronyc tracking | sed -n '1,3p' || true
 say "docker"
 if ! command -v docker >/dev/null 2>&1; then
   install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+  curl -fsSL "https://download.docker.com/linux/$DOCKER_REPO_DISTRO/gpg" \
     | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
   chmod a+r /etc/apt/keyrings/docker.gpg
   echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+https://download.docker.com/linux/$DOCKER_REPO_DISTRO $VERSION_CODENAME stable" \
     > /etc/apt/sources.list.d/docker.list
   apt-get update -qq
   apt-get install -y -qq \
