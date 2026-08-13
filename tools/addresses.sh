@@ -43,16 +43,17 @@ import json, os, sys
 body = json.load(sys.stdin)
 eth = body.get("ethereum", "?")
 overlay = body.get("overlay", "?")
-print(f"  fund this:  {eth}")
-print(f"  overlay:    {overlay}")
+print("  fund this:  " + eth)
+print("  overlay:    " + overlay)
 
 target = os.environ.get("NEIGHBORHOOD", "-")
 if target and target != "-":
-    # Compare the pinned binary prefix against the overlay latest leading bits.
+    # Compare the pinned binary prefix against the overlay leading bits.
     nybbles = (len(target) + 3) // 4
     bits = "".join(bin(int(c, 16))[2:].zfill(4) for c in overlay[:nybbles])[:len(target)]
     ok = bits == target
-    print(f"  neighborhood: got {bits}, pinned {target} {\"OK\" if ok else \"MISMATCH\"}")
+    status = "OK" if ok else "MISMATCH"
+    print("  neighborhood: got " + bits + ", pinned " + target + " " + status)
     if not ok:
         print("    Not in the pinned neighborhood. Usually means a nonce already")
         print("    existed in the statestore before target_neighborhood was set.")
