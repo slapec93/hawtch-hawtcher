@@ -6,7 +6,7 @@
   "description": "Monitoring suite for Swarm mainnet, driven by an 8-node Bee probe fleet",
   "scripts": {
     "generate": "node tools/generate.mjs",
-    "addresses": "node tools/addresses.mjs"
+    "addresses": "bash tools/addresses.sh"
   },
   "dependencies": {
     "js-yaml": "^4.1.0"

@@ -73,6 +73,7 @@ GENERATED := \
 	compose/enabled-nodes.generated.txt \
 	compose/ports.generated.txt \
 	compose/volumes.generated.txt \
+	compose/nodes.generated.txt \
 	compose/fleet.sha256.generated.txt \
 	prometheus/targets/bee.generated.json \
 	prometheus/targets/sidecars.generated.json \
@@ -285,7 +286,7 @@ logs:
 	$(COMPOSE) logs -f --tail=100
 
 addresses:
-	@node tools/addresses.mjs
+	@bash tools/addresses.sh
 
 # Backs up node identity: the wallet AND the overlay nonce.
 #

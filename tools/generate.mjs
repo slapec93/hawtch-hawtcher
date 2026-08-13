@@ -355,6 +355,15 @@ write(
 // never auto-created by compose.
 write('compose/volumes.generated.txt', enabled.map((n) => `hawtch_${n.name}-data`).join(' ') + '\n')
 
+// Everything tools/addresses.sh needs, so funding works on a host with no Node
+// toolchain: name, role, api port, pinned neighborhood ("-" when unset).
+write(
+  'compose/nodes.generated.txt',
+  enabled
+    .map((n) => `${n.name} ${n.role} ${n.apiPort} ${n.target_neighborhood || '-'}`)
+    .join('\n') + '\n',
+)
+
 // Fingerprint of the fleet.yml this output was rendered from.
 //
 // `make check-generated` compares content, not mtimes. Timestamps are useless
