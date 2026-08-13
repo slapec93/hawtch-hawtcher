@@ -1,1 +1,1 @@
-bee-1 bee-2 bee-3 bee-4 bee-5 bee-6 bee-7 bee-8
+bee-1 bee-2 bee-5 bee-6 bee-7 bee-8

@@ -66,11 +66,38 @@ That reads the generated port list, so the rules cannot drift from `fleet.yml`. 
 
 ---
 
-## 4. Decide the node count before starting
+## 4. The fleet as configured
 
-`fleet.yml` currently enables **all 8 nodes**. Phase 1 of the plan argues for validating **one** node end to end first — it exercises funding, neighborhood mining, and sync behaviour for a fraction of the cost, and it is where surprises surface.
+`fleet.yml` enables **6 of 8** nodes, tuned for an 8-core / 32 GB host:
 
-To start with one node, set `enabled: false` on bee-2..8, then on a workstation:
+| Nodes | Role | Enabled |
+|---|---|---|
+| bee-1, bee-2 | full | ✅ |
+| bee-3, bee-4 | full | ❌ disabled |
+| bee-5, bee-6 | feed pair | ✅ |
+| bee-7, bee-8 | content pair | ✅ |
+
+Full nodes are the expensive role — the only ones holding a reserve and pull-syncing, so they dominate CPU, RAM and especially disk I/O. Running two instead of four **halves the concurrent-sync contention** that is v0's sharpest measurement problem. The cost is coverage: two neighborhoods sampled instead of four.
+
+The four light nodes are nearly free (no reserve, no pullsync) and they are what makes the probes valid, so they stay.
+
+**Do not fold the probe pairs into the full nodes to save resources.** A full node asked to download a chunk it already holds in its reserve serves it locally, and the latency measurement becomes meaningless. Dedicated light nodes are a correctness requirement, not a luxury.
+
+Rough budget on your box:
+
+| | Used | Available |
+|---|---|---|
+| Disk | ~75 GB (50 GB reserves + light nodes + ~15 GB Prometheus at 90d) | 1 TB |
+| RAM | ~12 GB (2×2 GB full, 4×1 GB light, ~4 GB observer) | 32 GB |
+| CPU | 2 syncing nodes rather than 4 | 8 cores |
+
+Enable bee-3 and bee-4 later once the host has demonstrably got headroom.
+
+Verbosity is set to `warn` rather than `info` for the same reason: log write traffic lands on the same disk as the reserve and competes with pullsync. Raise it on a single node when debugging that node.
+
+### Still start with one node
+
+Even with headroom, phase 1 argues for validating **bee-1 alone** end to end first — it exercises funding, neighborhood mining and sync behaviour cheaply, and that is where surprises surface. Set `enabled: false` on the rest, then on a workstation:
 
 ```bash
 make generate && git commit -am "fleet: bee-1 only" && git push

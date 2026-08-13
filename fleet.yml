@@ -39,7 +39,10 @@ port_base: 1733
 defaults:
   # 1,000,000 chunks ~= 4 GiB (bee's own default).
   cache_capacity: 1000000
-  verbosity: info
+  # warn rather than info: eight containers at info generate a lot of log I/O on
+  # the same disk the reserve lives on, and that write traffic competes with
+  # pullsync. Raise to info on a single node when actually debugging it.
+  verbosity: warn
   # 0 or 1 only (maxAllowedDoubling = 1).
   # MUST be uniform across the full nodes: it also sets
   # shallowReceiptTolerance = maxAllowedDoubling - doubling, so mixing values
@@ -94,14 +97,23 @@ nodes:
     enabled: true
     target_neighborhood: "01000000"
 
+  # bee-3 and bee-4 are defined but disabled to keep the host from running tight
+  # on an 8-core / 32 GB box. Full nodes are the expensive role — they are the
+  # only ones holding a reserve and pull-syncing, so they dominate CPU, RAM and
+  # especially disk I/O. Two of them halves the concurrent-sync contention that
+  # is v0's sharpest measurement problem (PLAN.md 4.1).
+  #
+  # The cost is address-space coverage: two neighborhoods sampled instead of
+  # four. Comparison between neighborhoods still works, with less breadth.
+  # Enable these once the host has proven it has headroom.
   - name: bee-3
     role: full
-    enabled: true
+    enabled: false
     target_neighborhood: "10000000"
 
   - name: bee-4
     role: full
-    enabled: true
+    enabled: false
     target_neighborhood: "11000000"
 
   # Feed pair — beefeeder sidecar writes via the uploader, reads via the downloader.

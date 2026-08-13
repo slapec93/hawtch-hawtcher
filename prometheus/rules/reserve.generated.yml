@@ -11,14 +11,6 @@ groups:
         expr: '4194304'
         labels:
           node: bee-2
-      - record: hawtch:reserve_capacity_chunks
-        expr: '4194304'
-        labels:
-          node: bee-3
-      - record: hawtch:reserve_capacity_chunks
-        expr: '4194304'
-        labels:
-          node: bee-4
       - record: hawtch:reserve_free_chunks
         expr: hawtch:reserve_capacity_chunks - on(node) bee_localstore_reserve_size
       - record: hawtch:reserve_fill_chunks_per_second

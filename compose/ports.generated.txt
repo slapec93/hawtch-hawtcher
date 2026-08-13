@@ -2,10 +2,6 @@ bee-1 api 1733
 bee-1 p2p 1734
 bee-2 api 1735
 bee-2 p2p 1736
-bee-3 api 1737
-bee-3 p2p 1738
-bee-4 api 1739
-bee-4 p2p 1740
 bee-5 api 1741
 bee-5 p2p 1742
 bee-6 api 1743

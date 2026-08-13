@@ -10,9 +10,11 @@ The fleet is the *instrument*, not the subject: mainnet is what we're measuring.
 
 ## 1. Fleet roles
 
+**As deployed:** 6 of 8 nodes are enabled. Full nodes are cut from 4 to 2 to keep an 8-core / 32 GB host off its limits — they are the only role holding a reserve and pull-syncing, so two instead of four halves the concurrent-sync disk contention described in §4.1. The trade is address-space coverage: two neighborhoods sampled rather than four. Both probe pairs stay, being nearly free and required for the probes to mean anything. See [DEPLOY.md §4](DEPLOY.md#4-the-fleet-as-configured).
+
 | Nodes | Role | Measures |
 |---|---|---|
-| 1–4 | Full nodes, **neighborhoods pinned** | Pullsync rate, reserve size + growth, connectivity |
+| 1–4 | Full nodes, **neighborhoods pinned** (1–2 enabled) | Pullsync rate, reserve size + growth, connectivity |
 | 5–6 | Feed upload/download pair | Feed propagation timing (beefeeder) |
 | 7–8 | Content-addressed upload/download pair | Upload/download latency + bandwidth |
 | all | — | Host CPU / load / RAM, full vs. light peer counts |

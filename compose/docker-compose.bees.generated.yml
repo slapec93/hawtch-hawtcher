@@ -14,7 +14,7 @@ services:
       BEE_PASSWORD: ${BEE_PASSWORD}
       BEE_DATA_DIR: /home/bee/.bee
       BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: info
+      BEE_VERBOSITY: warn
       BEE_SWAP_ENABLE: 'true'
       BEE_STORAGE_INCENTIVES_ENABLE: 'false'
       BEE_TARGET_NEIGHBORHOOD: '00000000'
@@ -43,7 +43,7 @@ services:
       BEE_PASSWORD: ${BEE_PASSWORD}
       BEE_DATA_DIR: /home/bee/.bee
       BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: info
+      BEE_VERBOSITY: warn
       BEE_SWAP_ENABLE: 'true'
       BEE_STORAGE_INCENTIVES_ENABLE: 'false'
       BEE_TARGET_NEIGHBORHOOD: '01000000'
@@ -58,64 +58,6 @@ services:
     labels:
       hawtch.role: full
       hawtch.node: bee-2
-  bee-3:
-    image: ${BEE_IMAGE}
-    container_name: hawtch-bee-3
-    restart: unless-stopped
-    environment:
-      BEE_API_ADDR: ':1737'
-      BEE_P2P_ADDR: ':1738'
-      BEE_NAT_ADDR: ${PUBLIC_IP}:1738
-      BEE_FULL_NODE: 'true'
-      BEE_MAINNET: 'true'
-      BEE_BLOCKCHAIN_RPC_ENDPOINT: ${GNOSIS_RPC_ENDPOINT}
-      BEE_PASSWORD: ${BEE_PASSWORD}
-      BEE_DATA_DIR: /home/bee/.bee
-      BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: info
-      BEE_SWAP_ENABLE: 'true'
-      BEE_STORAGE_INCENTIVES_ENABLE: 'false'
-      BEE_TARGET_NEIGHBORHOOD: '10000000'
-      BEE_RESERVE_CAPACITY_DOUBLING: '0'
-    volumes:
-      - bee-3-data:/home/bee/.bee
-    ports:
-      - 127.0.0.1:1737:1737
-      - '1738:1738'
-    networks:
-      - hawtch
-    labels:
-      hawtch.role: full
-      hawtch.node: bee-3
-  bee-4:
-    image: ${BEE_IMAGE}
-    container_name: hawtch-bee-4
-    restart: unless-stopped
-    environment:
-      BEE_API_ADDR: ':1739'
-      BEE_P2P_ADDR: ':1740'
-      BEE_NAT_ADDR: ${PUBLIC_IP}:1740
-      BEE_FULL_NODE: 'true'
-      BEE_MAINNET: 'true'
-      BEE_BLOCKCHAIN_RPC_ENDPOINT: ${GNOSIS_RPC_ENDPOINT}
-      BEE_PASSWORD: ${BEE_PASSWORD}
-      BEE_DATA_DIR: /home/bee/.bee
-      BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: info
-      BEE_SWAP_ENABLE: 'true'
-      BEE_STORAGE_INCENTIVES_ENABLE: 'false'
-      BEE_TARGET_NEIGHBORHOOD: '11000000'
-      BEE_RESERVE_CAPACITY_DOUBLING: '0'
-    volumes:
-      - bee-4-data:/home/bee/.bee
-    ports:
-      - 127.0.0.1:1739:1739
-      - '1740:1740'
-    networks:
-      - hawtch
-    labels:
-      hawtch.role: full
-      hawtch.node: bee-4
   bee-5:
     image: ${BEE_IMAGE}
     container_name: hawtch-bee-5
@@ -130,7 +72,7 @@ services:
       BEE_PASSWORD: ${BEE_PASSWORD}
       BEE_DATA_DIR: /home/bee/.bee
       BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: info
+      BEE_VERBOSITY: warn
       BEE_SWAP_ENABLE: 'true'
       BEE_STORAGE_INCENTIVES_ENABLE: 'false'
     volumes:
@@ -157,7 +99,7 @@ services:
       BEE_PASSWORD: ${BEE_PASSWORD}
       BEE_DATA_DIR: /home/bee/.bee
       BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: info
+      BEE_VERBOSITY: warn
       BEE_SWAP_ENABLE: 'true'
       BEE_STORAGE_INCENTIVES_ENABLE: 'false'
     volumes:
@@ -184,7 +126,7 @@ services:
       BEE_PASSWORD: ${BEE_PASSWORD}
       BEE_DATA_DIR: /home/bee/.bee
       BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: info
+      BEE_VERBOSITY: warn
       BEE_SWAP_ENABLE: 'true'
       BEE_STORAGE_INCENTIVES_ENABLE: 'false'
     volumes:
@@ -211,7 +153,7 @@ services:
       BEE_PASSWORD: ${BEE_PASSWORD}
       BEE_DATA_DIR: /home/bee/.bee
       BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: info
+      BEE_VERBOSITY: warn
       BEE_SWAP_ENABLE: 'true'
       BEE_STORAGE_INCENTIVES_ENABLE: 'false'
     volumes:
@@ -231,12 +173,6 @@ volumes:
   bee-2-data:
     external: true
     name: hawtch_bee-2-data
-  bee-3-data:
-    external: true
-    name: hawtch_bee-3-data
-  bee-4-data:
-    external: true
-    name: hawtch_bee-4-data
   bee-5-data:
     external: true
     name: hawtch_bee-5-data
