@@ -2,7 +2,8 @@
 // Renders fleet.yml into compose services, Prometheus targets and reserve rules.
 // Run via `make generate`. Generated files are overwritten wholesale.
 
-import { writeFileSync, mkdirSync } from 'node:fs'
+import { writeFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { dirname, join } from 'node:path'
 import yaml from 'js-yaml'
 import { ROOT, MAX_ALLOWED_DOUBLING, KNOWN_ROLES, loadFleet } from './fleet.mjs'
@@ -349,6 +350,16 @@ write(
 // Volume names the Makefile must create up front, since external volumes are
 // never auto-created by compose.
 write('compose/volumes.generated.txt', enabled.map((n) => `hawtch_${n.name}-data`).join(' ') + '\n')
+
+// Fingerprint of the fleet.yml this output was rendered from.
+//
+// `make check-generated` compares content, not mtimes. Timestamps are useless
+// for this: git sets them to checkout time in arbitrary order, so a fresh clone
+// routinely leaves fleet.yml looking "newer" than files generated from it.
+write(
+  'compose/fleet.sha256.generated.txt',
+  createHash('sha256').update(readFileSync(join(ROOT, 'fleet.yml'))).digest('hex') + '\n',
+)
 
 // ---- summary ----------------------------------------------------------------
 
