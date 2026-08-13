@@ -1,0 +1,22 @@
+[
+  {
+    "targets": [
+      "hawtch-sidecar-latency:9101"
+    ],
+    "labels": {
+      "probe": "latency",
+      "uploader": "bee-7",
+      "downloader": "bee-8"
+    }
+  },
+  {
+    "targets": [
+      "hawtch-sidecar-beefeeder:9102"
+    ],
+    "labels": {
+      "probe": "beefeeder",
+      "uploader": "bee-5",
+      "downloader": "bee-6"
+    }
+  }
+]

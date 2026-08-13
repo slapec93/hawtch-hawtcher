@@ -9,7 +9,8 @@ PROJECT := hawtch
 ENV_FILE := $(shell test -f .env && echo .env || echo .env.example)
 COMPOSE := docker compose -p $(PROJECT) --env-file $(ENV_FILE) \
 	-f compose/docker-compose.observer.yml \
-	-f compose/docker-compose.bees.generated.yml
+	-f compose/docker-compose.bees.generated.yml \
+	-f compose/docker-compose.sidecars.generated.yml
 NETWORK := hawtch
 
 # Nodes enabled in fleet.yml, in declaration order. Read from a generated text
@@ -19,7 +20,7 @@ ENABLED := $(shell cat compose/enabled-nodes.generated.txt 2>/dev/null)
 
 TEST_COMPOSE := docker compose -p hawtch-test -f compose/docker-compose.test.yml
 
-.PHONY: help install generate network require-env preflight up up-observer up-bees up-staggered down stop ps logs validate addresses backup-keys reload-prometheus test-up test-check test-down test-logs
+.PHONY: help install generate network volumes require-env preflight restore destroy up up-observer up-bees up-staggered up-sidecars down stop ps logs validate addresses backup-keys reload-prometheus test-up test-check test-down test-logs test-probes
 
 help:
 	@echo "Setup"
@@ -33,6 +34,7 @@ help:
 	@echo "  up-observer        prometheus, grafana, cadvisor, node-exporter"
 	@echo "  up-bees            all enabled bee nodes at once"
 	@echo "  up-staggered       bee nodes one at a time (preferred: see PLAN.md 4.1)"
+	@echo "  up-sidecars        active probes (needs funded nodes + postage)"
 	@echo "  up                 observer + staggered nodes"
 	@echo "  down               stop and remove containers (volumes kept)"
 	@echo "  stop               stop containers, leave them in place"
@@ -41,14 +43,20 @@ help:
 	@echo "  test-up            observer stack pointed at bee-factory"
 	@echo "  test-check         assert targets are up and metrics are landing"
 	@echo "  test-logs          follow test stack logs"
+	@echo "  test-probes        run both probes against bee-factory (no real funds)"
 	@echo "  test-down          stop and discard the test TSDB"
 	@echo ""
 	@echo "Operate"
 	@echo "  ps                 container status"
 	@echo "  logs               follow all logs"
 	@echo "  addresses          print addresses to fund, and verify neighborhoods"
-	@echo "  backup-keys        tar each node's keystore into ./backups/"
-	@echo "  reload-prometheus  hot-reload config without dropping the TSDB"
+	@echo "  reload-prometheus  reload prometheus RULES/TARGETS (not prometheus.yml)"
+	@echo ""
+	@echo "Funded-wallet safety"
+	@echo "  volumes            create the external node volumes (compose cannot delete these)"
+	@echo "  backup-keys        keys + statestore + stamperstore -> ./backups/"
+	@echo "  restore            restore identity archives back into the volumes"
+	@echo "  destroy            DELETE node volumes (needs CONFIRM= and a backup)"
 	@echo ""
 	@echo "Enabled nodes: $(ENABLED)"
 
@@ -61,12 +69,23 @@ generate:
 validate: generate
 	@# Shell env beats --env-file, so this satisfies the deliberate `:?` guard on
 	@# GRAFANA_ADMIN_PASSWORD without weakening it for real deployments.
-	@GRAFANA_ADMIN_PASSWORD=validate-only $(COMPOSE) config --quiet \
+	@GRAFANA_ADMIN_PASSWORD=validate-only FEED_PRIVATE_KEY=validate-only \
+		$(COMPOSE) config --quiet \
 		&& echo "compose config OK ($(ENV_FILE))"
 
 network:
 	@docker network inspect $(NETWORK) >/dev/null 2>&1 \
 		|| docker network create $(NETWORK)
+
+# Node volumes are declared `external` in the generated compose file, which means
+# compose will neither create nor destroy them — `down -v` cannot touch a funded
+# wallet. The trade-off is that they must be created here, up front.
+volumes: generate
+	@for v in $$(cat compose/volumes.generated.txt); do \
+		docker volume inspect $$v >/dev/null 2>&1 \
+			|| { docker volume create --label hawtch.keep=true $$v >/dev/null && echo "  created $$v"; }; \
+	done
+	@echo "  ✓ $$(wc -w < compose/volumes.generated.txt | tr -d ' ') node volume(s) present"
 
 require-env:
 	@test -f .env || { \
@@ -75,7 +94,7 @@ require-env:
 		exit 1; \
 	}
 
-up-observer: require-env generate network
+up-observer: require-env generate network volumes
 	$(COMPOSE) up -d prometheus grafana cadvisor node-exporter
 
 # Refuses to start if any fleet port is already bound — most likely a stray
@@ -98,14 +117,14 @@ preflight:
 		echo "  ✓ all fleet ports free"; \
 	fi
 
-up-bees: require-env generate network preflight
+up-bees: require-env generate network volumes preflight
 	$(COMPOSE) up -d $(ENABLED)
 
 # Full nodes pull-syncing simultaneously against one disk bottleneck each other,
 # which corrupts the pullsync measurement itself (PLAN.md 4.1). Starting them
 # one at a time, waiting for each to begin syncing, keeps that contention out of
 # the warmup data.
-up-staggered: require-env generate network preflight
+up-staggered: require-env generate network volumes preflight
 	@for n in $(ENABLED); do \
 		echo "==> starting $$n"; \
 		$(COMPOSE) up -d $$n; \
@@ -113,10 +132,25 @@ up-staggered: require-env generate network preflight
 		sleep 300 || true; \
 	done
 
+# Probes need their paired nodes running and funded, and a postage batch. Start
+# them after the fleet is up, not alongside it.
+up-sidecars: require-env generate network
+	$(COMPOSE) up -d --build $(shell sed -n 's/^  \(sidecar-[a-z]*\):$$/\1/p' compose/docker-compose.sidecars.generated.yml 2>/dev/null)
+
 up: up-observer up-staggered
 
-down:
+# Stops and removes containers. Volumes are external, so they survive this even
+# if someone adds -v by hand. An identity snapshot is taken first regardless:
+# the cheapest moment to have a backup is just before touching anything.
+down: backup-keys
 	$(COMPOSE) down
+	@echo
+	@echo "Containers removed. Node volumes kept (they are external):"
+	@for v in $$(cat compose/volumes.generated.txt 2>/dev/null); do echo "  $$v"; done
+	@echo
+	@echo "WARNING: with no container referencing them, these volumes are now"
+	@echo "'unused' and 'docker volume prune' WOULD delete them. Prefer 'make stop'"
+	@echo "over 'make down' while the fleet is funded."
 
 stop:
 	$(COMPOSE) stop
@@ -130,8 +164,18 @@ logs:
 addresses:
 	@node tools/addresses.mjs
 
-# The keystore is the wallet. Volumes survive `down`, but not `down -v`, not a
-# disk failure, and not a mistaken `docker volume prune`.
+# Backs up node identity: the wallet AND the overlay nonce.
+#
+# keys/ alone is NOT enough. The Ethereum address comes from keys/swarm.key, but
+# the overlay address is derived from that key plus a nonce stored in the
+# statestore (`overlayV2_nonce`, see bee pkg/node/statestore.go). Restore keys/
+# without the statestore and bee re-mines a different overlay.
+#
+# stamperstore holds postage stamp issuance state, which matters on the uploader
+# nodes: losing it loses track of which stamp indices have been used.
+#
+# Volumes survive `down`, but not `down -v`, not a disk failure, and not a
+# mistaken `docker volume prune`.
 backup-keys:
 	@mkdir -p backups
 	@for n in $(ENABLED); do \
@@ -139,13 +183,61 @@ backup-keys:
 		docker run --rm \
 			-v $(PROJECT)_$$n-data:/data:ro \
 			-v "$$PWD/backups:/backup" \
-			alpine tar czf /backup/$$n-keys.tar.gz -C /data keys 2>/dev/null \
-			&& echo "    backups/$$n-keys.tar.gz" \
-			|| echo "    no keys yet (has the node started?)"; \
+			alpine tar czf /backup/$$n-identity.tar.gz -C /data keys statestore stamperstore 2>/dev/null \
+			&& echo "    backups/$$n-identity.tar.gz (keys + statestore + stamperstore)" \
+			|| echo "    nothing to back up yet (has the node started?)"; \
 	done
 	@echo
-	@echo "These are encrypted with BEE_PASSWORD. Back that up separately —"
+	@echo "keys/ is encrypted with BEE_PASSWORD — back that up separately,"
 	@echo "the archives are useless without it."
+	@echo
+	@echo "NOTE: taken while the nodes are running, so the leveldb copies may be"
+	@echo "mid-write. For a guaranteed-consistent copy, 'make stop' first."
+
+# Restores identity archives back into the volumes. This is what makes a lost
+# volume survivable rather than terminal, so it is worth rehearsing BEFORE you
+# need it — an untested backup is a guess.
+#
+# Refuses while a node's container is running: writing into a live leveldb
+# corrupts it.
+restore: volumes
+	@for n in $(ENABLED); do \
+		archive=backups/$$n-identity.tar.gz; \
+		if [ ! -f $$archive ]; then echo "==> $$n: no $$archive, skipping"; continue; fi; \
+		if docker ps --format '{{.Names}}' | grep -qx "hawtch-$$n"; then \
+			echo "==> $$n: container is RUNNING — refusing (run 'make stop' first)"; \
+			continue; \
+		fi; \
+		echo "==> $$n: restoring from $$archive"; \
+		docker run --rm \
+			-v hawtch_$$n-data:/data \
+			-v "$$PWD/backups:/backup:ro" \
+			alpine sh -c 'tar xzf /backup/'$$n'-identity.tar.gz -C /data && chown -R 999:999 /data' \
+			&& echo "    restored (keys + statestore + stamperstore)"; \
+	done
+	@echo
+	@echo "Verify with 'make up-bees && make addresses' — the Ethereum addresses"
+	@echo "must match what you funded, and the overlays must match your pinned"
+	@echo "neighborhoods."
+
+# The only target that deletes funded wallets. Deliberately awkward: it demands
+# an explicit confirmation string and refuses without a backup on disk, because
+# `docker compose down -v` is far too easy to type by accident.
+destroy:
+	@test "$(CONFIRM)" = "delete-funded-volumes" || { \
+		echo "This DELETES the node volumes, including funded wallets."; \
+		echo "There is no undo unless you have a backup."; \
+		echo; \
+		echo "If you really mean it:"; \
+		echo "  make destroy CONFIRM=delete-funded-volumes"; \
+		exit 1; \
+	}
+	@for n in $(ENABLED); do \
+		test -f backups/$$n-identity.tar.gz \
+			|| { echo "refusing: no backups/$$n-identity.tar.gz — run 'make backup-keys' first"; exit 1; }; \
+	done
+	$(COMPOSE) down
+	@for v in $$(cat compose/volumes.generated.txt); do docker volume rm $$v; done
 
 reload-prometheus: generate
 	@curl -fsS -X POST http://127.0.0.1:9090/-/reload && echo "prometheus reloaded"
@@ -170,6 +262,30 @@ test-check:
 
 test-logs:
 	$(TEST_COMPOSE) logs -f --tail=100
+
+# Run both probes against the bee-factory cluster, on the host rather than in
+# docker. Factory nodes are pre-funded on the local Anvil chain, so postage
+# purchase works without spending anything real — which is the only way to
+# exercise the postage path before pointing it at mainnet.
+test-probes:
+	@docker ps --format '{{.Names}}' | grep -q bee-factory-bee-0 \
+		|| { echo "bee-factory is not running — start it first"; exit 1; }
+	@test -d sidecars/node_modules || (cd sidecars && npm install)
+	@cd sidecars && npm run build --silent
+	@echo "starting probes against factory nodes 1633 (up) / 1635 (down)"
+	@cd sidecars && \
+		UPLOAD_BEE_URL=http://localhost:1633 DOWNLOAD_BEE_URL=http://localhost:1635 \
+		POSTAGE_AUTO_BUY=true POSTAGE_DURATION_DAYS=2 POSTAGE_MIN_TTL_SECONDS=3600 \
+		PAYLOAD_BYTES=10240 INTERVAL_SECONDS=15 TIMEOUT_SECONDS=45 \
+		METRICS_PORT=9101 node dist/latency.js & \
+	cd sidecars && \
+		FEED_PRIVATE_KEY=$${FEED_PRIVATE_KEY:-$$(openssl rand -hex 32)} \
+		UPLOAD_BEE_URL=http://localhost:1633 DOWNLOAD_BEE_URL=http://localhost:1635 \
+		POSTAGE_AUTO_BUY=true POSTAGE_DURATION_DAYS=2 POSTAGE_MIN_TTL_SECONDS=3600 \
+		INTERVAL_SECONDS=15 TIMEOUT_SECONDS=45 \
+		METRICS_PORT=9102 node dist/beefeeder.js & \
+	echo "latency -> :9101/metrics   beefeeder -> :9102/metrics   (Ctrl-C to stop)"; \
+	wait
 
 test-down:
 	$(TEST_COMPOSE) down -v

@@ -61,7 +61,9 @@ Everything scrapes over localhost. No VPN, no cross-region scrape config, no `re
 
 ### Port allocation
 
-Each node needs an API port and a P2P port. Sequential allocation from 1633 gives `1633/1634` through `1647/1648`; only the P2P ports need to be reachable from the internet.
+Each node needs an API port and a P2P port, assigned sequentially from `port_base` in `fleet.yml`: node *i* gets `api = port_base + 2i`, `p2p = api + 1`. Only the P2P ports need to be reachable from the internet.
+
+**`port_base` is 1733, not bee's default 1633.** bee-factory publishes `1633 + 2n` for n in 0..4, i.e. 1633–1642, and overlapping with it is worse than a bind failure. The API collision is *silent* for read-only tools: `make addresses` would query a factory node and report its wallet as ours, so you would fund the wrong node. The generator rejects any fleet whose ports land in the factory range, and `make preflight` refuses to start if any fleet port is already bound.
 
 ### Why Prometheus + Grafana
 
@@ -196,14 +198,22 @@ hawtch-hawtcher/
 
 ---
 
-## 8. Sidecars
+## 8. Sidecars — built
 
-TypeScript on `bee-js`, each exposing `/metrics` for Prometheus to scrape rather than pushing.
+TypeScript on `bee-js`, one package with two entrypoints, each exposing `/metrics` for Prometheus to scrape rather than pushing. Compose services and scrape targets are generated from `fleet.yml`.
 
-- **beefeeder** — writes a feed update via the uploader node, polls the downloader until it resolves, exports the delta as a histogram plus a failure counter.
-- **latency** — uploads a known-size payload, downloads it from the paired node, exports upload/download duration and derived bandwidth.
+- **beefeeder** — writes a feed update via the uploader, polls the downloader until *that specific* update is readable, exports write duration, propagation duration, poll attempts and stale reads.
+- **latency** — uploads a unique payload, downloads and verifies it from the paired node, exports upload/download/round-trip durations, retrieval attempts and throughput.
 
-Both require postage batches on the uploader nodes. Both **must** export failures as first-class metrics: a silent sidecar and a healthy network otherwise look identical.
+Three correctness properties, each learned or confirmed by running them:
+
+1. **Two distinct nodes are mandatory.** Same-node upload/download is a local read and measures nothing. Enforced in both the generator and at probe startup.
+2. **A feed read is not a fresh feed read.** Readers return the latest update they can find, so propagation is only measurable by comparing against a unique written marker. Stale reads are counted separately — this fired on 3 of 6 runs in testing.
+3. **Payloads must be unique per run.** A fixed payload would be served from warm caches and report ever-improving "latency."
+
+Both export failures as first-class metrics, by stage, because a silent sidecar and a healthy network look identical otherwise.
+
+**Postage** is the fiddliest dependency: expressed as size + duration (the required `amount` depends on current chain price, so hardcoding it fails), auto-buy off by default so a restart loop cannot spend repeatedly, cost logged before purchase, and batches near exhaustion or expiry rejected rather than adopted.
 
 ---
 
@@ -229,7 +239,7 @@ Both require postage batches on the uploader nodes. Both **must** export failure
 | 1 | `fleet.yml` schema + compose for **one** node | validate config generation end to end |
 | 2 | Prometheus + Grafana + cAdvisor + node_exporter | confirm scraping, including observer self-metrics (§4.3) |
 | 3 | Scale to 4 full nodes, pinned neighborhoods, **staggered** startup | then let them sync |
-| 4 | Sidecars + uploader/downloader pairs | needs funded postage batches |
+| 4 | Sidecars + uploader/downloader pairs | **code done and verified against bee-factory**; needs funded postage on mainnet |
 | 5 | Derived rules, correlation dashboards, alerting | |
 
 Sync time between steps 3 and 4 is unavoidable dead time — start the full nodes early even if the rest is unfinished.

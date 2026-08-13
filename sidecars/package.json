@@ -1,0 +1,27 @@
+{
+  "name": "@hawtch/sidecars",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Active probes for measurements Bee's /metrics cannot express",
+  "scripts": {
+    "build": "tsc",
+    "latency": "node dist/latency.js",
+    "beefeeder": "node dist/beefeeder.js",
+    "dev:latency": "tsx src/latency.ts",
+    "dev:beefeeder": "tsx src/beefeeder.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ethersphere/bee-js": "^12.3.1",
+    "prom-client": "^15.1.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

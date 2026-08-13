@@ -225,14 +225,30 @@ services:
       hawtch.role: data-download
       hawtch.node: bee-8
 volumes:
-  bee-1-data: null
-  bee-2-data: null
-  bee-3-data: null
-  bee-4-data: null
-  bee-5-data: null
-  bee-6-data: null
-  bee-7-data: null
-  bee-8-data: null
+  bee-1-data:
+    external: true
+    name: hawtch_bee-1-data
+  bee-2-data:
+    external: true
+    name: hawtch_bee-2-data
+  bee-3-data:
+    external: true
+    name: hawtch_bee-3-data
+  bee-4-data:
+    external: true
+    name: hawtch_bee-4-data
+  bee-5-data:
+    external: true
+    name: hawtch_bee-5-data
+  bee-6-data:
+    external: true
+    name: hawtch_bee-6-data
+  bee-7-data:
+    external: true
+    name: hawtch_bee-7-data
+  bee-8-data:
+    external: true
+    name: hawtch_bee-8-data
 networks:
   hawtch:
     external: true

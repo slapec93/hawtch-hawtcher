@@ -55,3 +55,13 @@ scrape_configs:
   - job_name: prometheus
     static_configs:
       - targets: ["localhost:9090"]
+
+  # Probes run on the HOST in test mode (`make test-probes`), not as containers,
+  # so they are reached via host.docker.internal rather than the generated
+  # container-name targets used in production.
+  - job_name: sidecars
+    static_configs:
+      - targets: ["host.docker.internal:9101"]
+        labels: { probe: latency, uploader: factory-0, downloader: factory-1 }
+      - targets: ["host.docker.internal:9102"]
+        labels: { probe: beefeeder, uploader: factory-0, downloader: factory-1 }

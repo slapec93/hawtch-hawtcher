@@ -162,7 +162,12 @@ for (const node of enabled) {
       'hawtch.node': node.name,
     },
   }
-  composeVolumes[`${node.name}-data`] = null
+  // Declared external on purpose. These volumes hold funded wallets, and an
+  // external volume is one compose is not allowed to create or destroy: `docker
+  // compose down -v` skips it entirely. The explicit `name` also decouples the
+  // volume from the compose project name, so a different -p can never silently
+  // address a different (empty) volume.
+  composeVolumes[`${node.name}-data`] = { external: true, name: `hawtch_${node.name}-data` }
 }
 
 write(
@@ -238,6 +243,100 @@ const reserveRules = {
 
 write('prometheus/rules/reserve.generated.yml', BANNER + yaml.dump(reserveRules, { lineWidth: 120 }))
 
+// ---- sidecar probes ---------------------------------------------------------
+
+// Each probe is defined by the pair of roles it measures across. Both halves must
+// be enabled: pointing a probe's upload and download at the same node makes the
+// download a local read, which measures nothing about the network. config.ts
+// rejects that at runtime too, but failing here is cheaper than at deploy time.
+const SIDECAR_SPECS = {
+  latency: { uploadRole: 'data-upload', downloadRole: 'data-download', entrypoint: 'dist/latency.js' },
+  beefeeder: { uploadRole: 'feed-upload', downloadRole: 'feed-download', entrypoint: 'dist/beefeeder.js' },
+}
+
+const sidecarConfig = fleet.sidecars ?? {}
+const sidecarServices = {}
+const sidecarTargets = []
+
+for (const [name, spec] of Object.entries(SIDECAR_SPECS)) {
+  const cfg = sidecarConfig[name]
+  if (!cfg?.enabled) continue
+
+  const uploader = enabled.find((n) => n.role === spec.uploadRole)
+  const downloader = enabled.find((n) => n.role === spec.downloadRole)
+
+  if (!uploader || !downloader) {
+    const missing = [!uploader && spec.uploadRole, !downloader && spec.downloadRole].filter(Boolean)
+    console.warn(
+      `warning: sidecar "${name}" is enabled but no enabled node has role(s) ${missing.join(', ')} — skipping it. ` +
+        `Enable the paired nodes in fleet.yml, or set sidecars.${name}.enabled to false.`,
+    )
+    continue
+  }
+
+  const metricsPort = cfg.metrics_port ?? (name === 'latency' ? 9101 : 9102)
+  const env = {
+    PROBE_NAME: name,
+    // Container-to-container over the docker network: the API ports are bound to
+    // loopback on the host and deliberately not reachable from outside.
+    UPLOAD_BEE_URL: `http://hawtch-${uploader.name}:${uploader.apiPort}`,
+    DOWNLOAD_BEE_URL: `http://hawtch-${downloader.name}:${downloader.apiPort}`,
+    METRICS_PORT: String(metricsPort),
+    INTERVAL_SECONDS: String(cfg.interval_seconds ?? 300),
+    TIMEOUT_SECONDS: String(cfg.timeout_seconds ?? 120),
+    POSTAGE_BATCH_ID: '${POSTAGE_BATCH_ID_' + name.toUpperCase() + ':-}',
+    // Off unless explicitly enabled in .env: auto-buy on a restart loop spends
+    // real xBZZ every time.
+    POSTAGE_AUTO_BUY: '${POSTAGE_AUTO_BUY:-false}',
+    POSTAGE_SIZE_GB: String(cfg.postage_size_gb ?? 1),
+    POSTAGE_DURATION_DAYS: String(cfg.postage_duration_days ?? 30),
+  }
+  if (name === 'latency') env.PAYLOAD_BYTES = String(cfg.payload_bytes ?? 102400)
+  if (name === 'beefeeder') {
+    env.FEED_TOPIC = cfg.feed_topic ?? 'hawtch-hawtcher/beefeeder'
+    // Must be stable across restarts: a new key is a new feed, and the reader
+    // would then poll an address nobody writes to.
+    env.FEED_PRIVATE_KEY = '${FEED_PRIVATE_KEY:?set FEED_PRIVATE_KEY in .env}'
+  }
+
+  sidecarServices[`sidecar-${name}`] = {
+    build: { context: '../sidecars' },
+    image: `hawtch/sidecar:${fleet.version ?? 1}`,
+    container_name: `hawtch-sidecar-${name}`,
+    restart: 'unless-stopped',
+    command: ['node', spec.entrypoint],
+    environment: env,
+    depends_on: [uploader.name, downloader.name],
+    networks: [fleet.network],
+  }
+
+  sidecarTargets.push({
+    targets: [`hawtch-sidecar-${name}:${metricsPort}`],
+    labels: {
+      probe: name,
+      uploader: uploader.name,
+      downloader: downloader.name,
+    },
+  })
+}
+
+// Omit the `services` key entirely when no probe is wired: an empty mapping is
+// not something compose should have to interpret, and this file is always passed
+// with -f regardless.
+write(
+  'compose/docker-compose.sidecars.generated.yml',
+  BANNER +
+    yaml.dump(
+      {
+        ...(Object.keys(sidecarServices).length ? { services: sidecarServices } : {}),
+        networks: { [fleet.network]: { external: true } },
+      },
+      { lineWidth: 120, noRefs: true },
+    ),
+)
+
+write('prometheus/targets/sidecars.generated.json', JSON.stringify(sidecarTargets, null, 2) + '\n')
+
 // ---- plain-text derivatives for the Makefile --------------------------------
 
 // The Makefile used to shell out to node to read fleet.yml, which quietly made
@@ -247,6 +346,9 @@ write(
   'compose/ports.generated.txt',
   enabled.flatMap((n) => [`${n.name} api ${n.apiPort}`, `${n.name} p2p ${n.p2pPort}`]).join('\n') + '\n',
 )
+// Volume names the Makefile must create up front, since external volumes are
+// never auto-created by compose.
+write('compose/volumes.generated.txt', enabled.map((n) => `hawtch_${n.name}-data`).join(' ') + '\n')
 
 // ---- summary ----------------------------------------------------------------
 

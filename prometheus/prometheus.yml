@@ -45,10 +45,10 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # Sidecars land here once built (phase 4). They expose /metrics like anything
-  # else; nothing about collection changes.
+  # Active probes. They expose /metrics exactly like bee does — the only
+  # difference is that they generate the data rather than observe it.
   - job_name: sidecars
     file_sd_configs:
       - files:
-          - /etc/prometheus/targets/sidecars.json
+          - /etc/prometheus/targets/sidecars.generated.json
         refresh_interval: 30s

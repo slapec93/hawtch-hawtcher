@@ -5,6 +5,7 @@
 backups/
 
 node_modules/
+sidecars/dist/
 
 # Generated from fleet.yml. Committed deliberately: reviewing a fleet change
 # means seeing the rendered diff, and it keeps the deploy host from needing node.

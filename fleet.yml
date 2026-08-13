@@ -50,9 +50,30 @@ defaults:
   # pullsync-vs-CPU correlation. Turn on deliberately, not by default.
   storage_incentives_enable: false
 
-# api_port / p2p_port are assigned automatically from 1633 upward when omitted
-# (node i gets api = 1633 + 2i, p2p = api + 1). Container and host ports are
-# kept identical so BEE_NAT_ADDR and the scrape target agree.
+# Active probes. These measure what bee's /metrics cannot express: they upload,
+# download and time the round trip, then expose the result for scraping.
+#
+# Each probe needs BOTH of its paired nodes enabled — a round trip measured
+# against a single node is served from local storage and means nothing, so the
+# generator refuses to wire a probe whose pair is incomplete.
+sidecars:
+  # Content-addressed upload/download latency and bandwidth (nodes 7-8).
+  latency:
+    enabled: true
+    metrics_port: 9101
+    interval_seconds: 300
+    payload_bytes: 102400
+
+  # Feed propagation timing (nodes 5-6).
+  beefeeder:
+    enabled: true
+    metrics_port: 9102
+    interval_seconds: 300
+    feed_topic: hawtch-hawtcher/beefeeder
+
+# api_port / p2p_port are assigned automatically from port_base upward when
+# omitted (node i gets api = port_base + 2i, p2p = api + 1). Container and host
+# ports are kept identical so BEE_NAT_ADDR and the scrape target agree.
 #
 # target_neighborhood: binary prefix for initial overlay mining. Leaving this
 # empty is NOT the same as omitting the concern — bee would then ask

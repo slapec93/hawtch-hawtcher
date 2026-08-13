@@ -126,19 +126,49 @@ Off by default (`storage_incentives_enable: false`). A staking node runs reserve
 
 ## Volumes: what they actually protect
 
-Each node gets a named volume mounted at `/home/bee/.bee` (the image's declared `VOLUME`, running as uid 999). It holds three things you cannot regenerate:
+Each node gets a named volume mounted at `/home/bee/.bee` (the image's declared `VOLUME`, running as uid 999). Node identity comes from two *separate* places inside it:
 
-1. **The wallet key** (`keys/`) — encrypted with `BEE_PASSWORD`. Lose the volume, lose the funds.
-2. **The overlay nonce** (statestore) — this is what pins the node to its mined neighborhood. Lose it and the node re-mines somewhere else, invalidating comparisons across your fleet.
-3. **The reserve** — recoverable, but only by re-syncing from the network, which takes a long time and skews measurements while it happens.
+| Address | Derived from | Lives in |
+|---|---|---|
+| **Ethereum** (what you fund) | the private key | `keys/swarm.key`, encrypted with `BEE_PASSWORD` |
+| **Overlay** (position in Swarm) | key + networkID + **nonce** | the nonce is in `statestore` (`overlayV2_nonce`) |
 
-So:
+Both are **static for the life of the volume**. Restarts, `make stop`, `make down`, host reboots — the addresses do not change.
+
+The subtlety: `keys/` alone is not enough. Restore the key without the statestore and Bee finds no nonce, so it **re-mines a different overlay**. Also in the volume: `stamperstore` (postage stamp issuance state — matters on the uploaders) and the reserve, which is recoverable only by re-syncing.
 
 ```bash
-make backup-keys          # tars keys/ out of each volume into ./backups/
+make backup-keys          # keys/ + statestore + stamperstore -> ./backups/
 ```
 
-Back up `BEE_PASSWORD` **separately** — the archives are encrypted with it and useless without it.
+Back up `BEE_PASSWORD` **separately** — the archives are encrypted with it and useless without it. The archives are taken while the nodes run, so the leveldb copies may be mid-write; `make stop` first for a guaranteed-consistent copy.
+
+### Not losing funded wallets
+
+Four layers, because this is the one irreversible failure mode in the project.
+
+**1. Volumes are `external`.** Compose is not permitted to create or destroy them, so `docker compose down -v` — typed by hand, in a script, anywhere — skips them. Verified by rehearsal: a volume holding a planted key survived `down -v` intact. They must be created up front, which `make volumes` does (and every `up-*` target depends on it).
+
+The explicit `name:` (`hawtch_<node>-data`) also decouples them from the compose project name, so running with a different `-p` can no longer silently address a different, empty volume.
+
+**2. `docker volume prune` is still a real risk, and `external` does not stop it.** Prune deletes any volume no container references — and after `make down`, yours qualify. Two defences:
+
+- **Prefer `make stop` over `make down`** while the fleet is funded. Stopped containers still reference their volumes, so prune leaves them alone.
+- Volumes are labelled `hawtch.keep=true`, so a safe prune is:
+  ```bash
+  docker volume prune --filter "label!=hawtch.keep=true"
+  ```
+  `make down` prints this warning explicitly when it finishes.
+
+**3. `make down` takes a backup first**, automatically. The cheapest moment to have a snapshot is just before touching anything.
+
+**4. `make restore` puts it back.** Rehearsed end to end: archive, delete `keys/` and `statestore/`, restore, and the key and nonce come back with correct `999:999` ownership. It refuses while a node's container is running, since writing into a live leveldb corrupts it. **Rehearse this yourself before you need it** — an untested backup is a guess.
+
+Deleting volumes deliberately requires `make destroy CONFIRM=delete-funded-volumes`, and it refuses outright if any node lacks a backup on disk.
+
+The one thing none of this protects against is **disk failure or losing the server**. `./backups/` lives on the same host, so copy those archives somewhere else — plus `BEE_PASSWORD`, stored separately, since the archives are encrypted with it.
+
+**One consolation from pinning neighborhoods:** if a statestore is lost, the node re-mines into the *same* `target_neighborhood` from `fleet.yml`. The overlay differs, but the neighborhood — the thing measurements actually depend on — is preserved. You lose the reserve to a re-sync, not the comparability of the fleet.
 
 Two commands to be careful with: `docker compose down -v` and `docker volume prune`. Both destroy funded wallets. `make down` deliberately does not pass `-v`.
 
@@ -186,8 +216,50 @@ docker run --rm -v "$PWD/prometheus:/etc/prometheus:ro" \
 
 ---
 
+## Sidecar probes
+
+Everything above is **passive** — Prometheus scraping counters Bee already exposes. The two sidecars are **active**: they upload, download and time the result, because no Bee metric can express a round trip.
+
+| Probe | Nodes | Measures |
+|---|---|---|
+| `latency` | 7 → 8 | Upload duration, download duration, verified round trip, retrieval attempts, throughput |
+| `beefeeder` | 5 → 6 | Feed write duration, propagation to the paired reader, poll attempts, stale reads |
+
+Both live in `sidecars/` as one TypeScript package on `bee-js`, sharing config parsing, postage handling and the run loop. They expose `/metrics` for Prometheus to scrape — nothing is pushed. Their compose services and scrape targets are generated from `fleet.yml`, so endpoints can't drift from the nodes they're meant to probe.
+
+Configure them under `sidecars:` in `fleet.yml` (enable/disable, interval, payload size, feed topic). Secrets go in `.env`.
+
+### Two design points that matter for correctness
+
+**A round trip needs two distinct nodes.** If upload and download pointed at the same Bee, the download would be served from local storage and the number would mean nothing. The generator refuses to wire a probe whose pair is incomplete, and the probe itself refuses at startup if both URLs match.
+
+**"The read succeeded" is not "the new update arrived."** A feed reader always returns the latest update it can find, so `beefeeder` writes a unique marker payload and polls until it reads *that* payload back. Reads returning an older update are counted separately as `hawtch_feed_stale_reads_total` — the reader is behind, not broken. Without this comparison, a stale read would be recorded as instant propagation. In testing this counter fired on 3 of 6 runs, so it is not a theoretical concern.
+
+### Postage
+
+The probes cannot upload without a usable batch, and postage exhaustion produces upload failures that look exactly like network failures — hence dedicated metrics and alerts.
+
+- Preferred: buy batches yourself and pin `POSTAGE_BATCH_ID_LATENCY` / `POSTAGE_BATCH_ID_BEEFEEDER` in `.env`.
+- Otherwise set `POSTAGE_AUTO_BUY=true`. **Off by default on purpose**: with auto-buy on, a crash-looping probe buys a fresh batch on every restart, and on mainnet that is real xBZZ each time. The probe logs the estimated cost before purchasing, and prefers reusing an existing usable batch.
+- A batch that is nearly full or close to expiry is rejected at startup rather than adopted, so it cannot expire mid-measurement.
+
+Postage is expressed as **size + duration** (`POSTAGE_SIZE_GB`, `POSTAGE_DURATION_DAYS`) rather than a raw `amount`, because the required amount depends on the current chain price — a hardcoded value is wrong on any day but the one it was written, and Bee rejects it outright.
+
+### Running them
+
+```bash
+# against bee-factory, no real funds — the only way to exercise the postage path safely
+make test-probes            # latency -> :9101/metrics, beefeeder -> :9102/metrics
+
+# for real, after the fleet is up and funded
+make up-sidecars
+```
+
+`make test-probes` runs them on the host against the factory cluster, which is pre-funded on the local Anvil chain.
+
+---
+
 ## Not built yet
 
-- **Sidecars** (`sidecars/beefeeder`, `sidecars/latency`) — the only measurements Bee's `/metrics` cannot provide. `prometheus/targets/sidecars.json` is a placeholder empty list; the scrape job is already configured.
-- Dashboards beyond `fleet-overview.json`: per-node detail, uploader health, the pullsync-vs-CPU correlation view.
+- Dashboards beyond `fleet-overview.json` and `probes.json`: per-node detail, uploader health, the pullsync-vs-CPU correlation view.
 - v1: multi-server, geo-distribution, Ansible, private mesh, observer moved off the measured host.
