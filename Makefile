@@ -162,8 +162,11 @@ firewall-grafana: require-env
 		exit 0; \
 	fi; \
 	if [ -n "$$cidr" ]; then \
-		sudo ufw allow from "$$cidr" to any port "$$port" proto tcp comment "hawtch grafana" >/dev/null \
-			&& echo "  allowed $$port/tcp from $$cidr only"; \
+		for c in $$(echo "$$cidr" | tr ',' ' '); do \
+			sudo ufw allow from "$$c" to any port "$$port" proto tcp comment "hawtch grafana" >/dev/null \
+				&& echo "  allowed $$port/tcp from $$c"; \
+		done; \
+		echo "  (every other source is denied by the default-deny policy)"; \
 	else \
 		sudo ufw allow "$$port"/tcp comment "hawtch grafana (any source)" >/dev/null \
 			&& echo "  allowed $$port/tcp from ANY source"; \
