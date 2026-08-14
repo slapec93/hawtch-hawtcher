@@ -138,6 +138,23 @@ export const feedSequence = new Gauge({
   registers: [registry],
 })
 
+/**
+ * Create the zero-valued series a probe should always expose, before it has done
+ * any work.
+ *
+ * Without this, a probe that has never succeeded exports nothing at all, and the
+ * dashboards cannot tell "no probe is running" from "the probe is running and
+ * failing every attempt" — both render as No data, which reads as harmless.
+ */
+export function initProbeMetrics(probe: string): void {
+  runs.inc({ probe, result: 'success' }, 0)
+  runs.inc({ probe, result: 'failure' }, 0)
+  lastRunTimestamp.set({ probe }, 0)
+  // Deliberately NOT lastSuccessTimestamp: leaving it absent until a genuine
+  // success keeps `time() - last_success` from reporting a 57-year-old timestamp.
+  // The dashboards read "never succeeded" from runs_total instead.
+}
+
 /** Serve /metrics. Nothing is pushed; Prometheus scrapes this. */
 export function serveMetrics(port: number, probe: string): void {
   const server = createServer(async (req, res) => {

@@ -14,6 +14,7 @@ import {
   feedSequence,
   feedStaleReads,
   feedWriteDuration,
+  initProbeMetrics,
   serveMetrics,
 } from './metrics.js'
 import { ensurePostageBatch, refreshBatchMetrics } from './postage.js'
@@ -87,6 +88,7 @@ async function probe(batchId: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  initProbeMetrics(cfg.probe)
   serveMetrics(cfg.metricsPort, cfg.probe)
 
   const batchId = await ensurePostageBatch(uploader, cfg.postage, cfg.probe)

@@ -11,6 +11,7 @@ import {
   downloadAttempts,
   downloadDuration,
   roundTripDuration,
+  initProbeMetrics,
   serveMetrics,
   throughput,
   uploadDuration,
@@ -91,6 +92,7 @@ async function probe(batchId: string): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  initProbeMetrics(cfg.probe)
   serveMetrics(cfg.metricsPort, cfg.probe)
 
   const batchId = await ensurePostageBatch(uploader, cfg.postage, cfg.probe)

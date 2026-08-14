@@ -1,24 +1,43 @@
 {
   "uid": "hawtch-probes",
-  "title": "Hawtch · Active probes",
-  "tags": ["hawtch"],
+  "title": "Hawtch \u00b7 Active probes",
+  "tags": [
+    "hawtch"
+  ],
   "timezone": "browser",
   "editable": true,
   "schemaVersion": 39,
   "refresh": "30s",
-  "time": { "from": "now-24h", "to": "now" },
+  "time": {
+    "from": "now-24h",
+    "to": "now"
+  },
   "panels": [
     {
       "type": "stat",
       "title": "Time since last success",
-      "description": "A probe can be up and failing every run. This, not `up`, is the health signal. Clamped at 0: the probe stamps this from its own clock, so a backwards clock step on the host would otherwise render as a negative age.",
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "description": "A probe can be up and failing every run, so this \u2014 not `up` \u2014 is the health signal. Clamped at 0 because the probe stamps the timestamp from its own clock. 'never succeeded' means the probe is running (or was) but has not completed a single successful run; a genuinely absent probe shows no failure count either.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hawtch-prom"
+      },
       "targets": [
         {
           "refId": "A",
           "expr": "clamp_min(time() - hawtch_probe_last_success_timestamp_seconds, 0)",
           "legendFormat": "{{probe}}",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (probe) (hawtch_probe_runs_total{result=\"failure\"})",
+          "legendFormat": "{{probe}} failed runs",
           "instant": true
         }
       ],
@@ -29,21 +48,52 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 900 },
-              { "color": "red", "value": 1800 }
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 900
+              },
+              {
+                "color": "red",
+                "value": 1800
+              }
             ]
-          }
+          },
+          "noValue": "never succeeded"
         },
         "overrides": []
+      },
+      "options": {
+        "textMode": "value_and_name",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
       }
     },
     {
       "type": "timeseries",
       "title": "Round-trip latency (p50 / p95)",
       "description": "Upload start to verified download, including retrieval retries.",
-      "gridPos": { "h": 9, "w": 9, "x": 6, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "gridPos": {
+        "h": 9,
+        "w": 9,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hawtch-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -56,14 +106,31 @@
           "legendFormat": "{{probe}} p95"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 2, "fillOpacity": 5 } }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 5
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "type": "timeseries",
       "title": "Feed propagation (p50 / p95)",
       "description": "Write completion to the new update being readable at the paired node. Excludes the write itself.",
-      "gridPos": { "h": 9, "w": 9, "x": 15, "y": 0 },
-      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "gridPos": {
+        "h": 9,
+        "w": 9,
+        "x": 15,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hawtch-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -81,32 +148,66 @@
           "legendFormat": "write p50"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "s", "custom": { "lineWidth": 2, "fillOpacity": 5 } }, "overrides": [] }
-    },
-    {
-      "type": "timeseries",
-      "title": "Failures by stage",
-      "description": "Which part broke: upload, download, verify, feed-write, feed-propagation.",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
-      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "rate(hawtch_probe_stage_failures_total[30m]) * 3600",
-          "legendFormat": "{{probe}} · {{stage}}"
-        }
-      ],
       "fieldConfig": {
-        "defaults": { "unit": "short", "custom": { "lineWidth": 1, "fillOpacity": 20, "stacking": { "mode": "normal" } } },
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 5
+          }
+        },
         "overrides": []
       }
     },
     {
       "type": "timeseries",
-      "title": "Retrieval effort — download attempts & stale feed reads",
-      "description": "Rising attempts mean retrieval is degrading even when final latency still looks fine. Stale reads are valid reads of an older feed update — the reader is behind, not broken.",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
-      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "title": "Failures by stage",
+      "description": "Which part broke: upload, download, verify, feed-write, feed-propagation.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hawtch-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(hawtch_probe_stage_failures_total[30m]) * 3600",
+          "legendFormat": "{{probe}} \u00b7 {{stage}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 20,
+            "stacking": {
+              "mode": "normal"
+            }
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Retrieval effort \u2014 download attempts & stale feed reads",
+      "description": "Rising attempts mean retrieval is degrading even when final latency still looks fine. Stale reads are valid reads of an older feed update \u2014 the reader is behind, not broken.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 9
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hawtch-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -124,24 +225,61 @@
           "legendFormat": "stale feed reads/h"
         }
       ],
-      "fieldConfig": { "defaults": { "custom": { "lineWidth": 1, "fillOpacity": 0 } }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "type": "timeseries",
       "title": "Throughput (last run)",
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 17 },
-      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hawtch-prom"
+      },
       "targets": [
-        { "refId": "A", "expr": "hawtch_latency_bytes_per_second", "legendFormat": "{{probe}} {{direction}}" }
+        {
+          "refId": "A",
+          "expr": "hawtch_latency_bytes_per_second",
+          "legendFormat": "{{probe}} {{direction}}"
+        }
       ],
-      "fieldConfig": { "defaults": { "unit": "Bps", "custom": { "lineWidth": 1, "fillOpacity": 5 } }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "Bps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 5
+          }
+        },
+        "overrides": []
+      }
     },
     {
       "type": "timeseries",
-      "title": "Postage health — the probes stop working without it",
+      "title": "Postage health \u2014 the probes stop working without it",
       "description": "A filled or expired batch produces upload failures that look exactly like network failures.",
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 17 },
-      "datasource": { "type": "prometheus", "uid": "hawtch-prom" },
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hawtch-prom"
+      },
       "targets": [
         {
           "refId": "A",
@@ -155,20 +293,43 @@
         }
       ],
       "fieldConfig": {
-        "defaults": { "custom": { "lineWidth": 2, "fillOpacity": 0 } },
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0
+          }
+        },
         "overrides": [
           {
-            "matcher": { "id": "byRegexp", "options": ".*TTL days" },
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*TTL days"
+            },
             "properties": [
-              { "id": "custom.axisPlacement", "value": "right" },
-              { "id": "unit", "value": "d" }
+              {
+                "id": "custom.axisPlacement",
+                "value": "right"
+              },
+              {
+                "id": "unit",
+                "value": "d"
+              }
             ]
           },
           {
-            "matcher": { "id": "byRegexp", "options": ".*utilization %" },
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*utilization %"
+            },
             "properties": [
-              { "id": "unit", "value": "percent" },
-              { "id": "max", "value": 100 }
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "max",
+                "value": 100
+              }
             ]
           }
         ]

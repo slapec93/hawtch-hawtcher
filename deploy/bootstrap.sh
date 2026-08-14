@@ -102,13 +102,22 @@ echo "note: $TARGET_USER must re-login before docker works without sudo"
 # Log rotation. Eight bee nodes at info verbosity produce a lot, and a full disk
 # is a bad way to discover that — bee handles it poorly, and the reserve needs
 # every byte it was sized for.
-say "docker log rotation"
+# The containerd-snapshotter feature must stay OFF. With it enabled, docker
+# reports its storage driver as "overlayfs" and keeps layer metadata where
+# cAdvisor cannot find it, so cAdvisor fails to construct ANY container object:
+#   failed to identify the read-write layer ID for container ...
+#   open /var/lib/docker/image/overlayfs/layerdb/mounts/<id>/mount-id: no such file
+# The result is a single root-cgroup series, no container names, no labels, and no
+# per-node CPU attribution at all (PLAN.md 4.2). Volumes are unaffected by the
+# setting; switching it costs an image re-pull.
+say "docker log rotation + storage driver"
 if [ ! -f /etc/docker/daemon.json ]; then
   mkdir -p /etc/docker
   cat > /etc/docker/daemon.json <<'JSON'
 {
   "log-driver": "json-file",
-  "log-opts": { "max-size": "50m", "max-file": "5" }
+  "log-opts": { "max-size": "50m", "max-file": "5" },
+  "features": { "containerd-snapshotter": false }
 }
 JSON
   systemctl restart docker
@@ -116,6 +125,13 @@ JSON
 else
   echo "/etc/docker/daemon.json exists — leaving it alone"
   echo "  ensure log rotation is configured, or 8 nodes will fill the disk"
+  if docker info 2>/dev/null | grep -qi "Storage Driver: overlayfs"; then
+    echo
+    echo "  WARNING: storage driver is 'overlayfs' (containerd snapshotter is ON)."
+    echo "  cAdvisor cannot read container metadata in that layout, so per-container"
+    echo "  CPU will be empty. Add to /etc/docker/daemon.json and restart docker:"
+    echo '    "features": { "containerd-snapshotter": false }'
+  fi
 fi
 
 say "firewall"

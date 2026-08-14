@@ -36,9 +36,9 @@
   "panels": [
     {
       "type": "stat",
-      "title": "Nodes up",
+      "title": "Our fleet \u2014 nodes reporting / ready / synced",
       "gridPos": {
-        "h": 4,
+        "h": 8,
         "w": 4,
         "x": 0,
         "y": 0
@@ -50,12 +50,27 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(up{job=\"bee\"})",
+          "expr": "count(up{job=\"bee\"} == 1)",
+          "legendFormat": "reporting",
+          "instant": true
+        },
+        {
+          "refId": "B",
+          "expr": "count(bee_init_warmup_duration_seconds_count >= 1)",
+          "legendFormat": "warmed up",
+          "instant": true
+        },
+        {
+          "refId": "C",
+          "expr": "count(bee_init_full_sync_duration_minutes_count >= 1)",
+          "legendFormat": "synced",
           "instant": true
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "decimals": 0,
+          "noValue": "0",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -71,6 +86,20 @@
           }
         },
         "overrides": []
+      },
+      "description": "Counts OUR probe fleet, not the Swarm network. 'reporting' = prometheus scraped it (true even while the node is stuck in the funding loop or returning 503, since /metrics sits outside bee's sync gate). 'warmed up' and 'synced' come from bee's own one-shot histograms, observed only when it logs 'node warmup complete' and when full sync finishes \u2014 so they are the honest readiness signals. For network-wide peer counts see the peers panel.",
+      "options": {
+        "textMode": "value_and_name",
+        "orientation": "vertical",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none"
       }
     },
     {
@@ -150,7 +179,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 4
+        "y": 32
       },
       "datasource": {
         "type": "prometheus",
@@ -169,7 +198,8 @@
           "decimals": 0
         },
         "overrides": []
-      }
+      },
+      "description": "Current storage depth per node. Rises when the reserve hits its ceiling and evicts."
     },
     {
       "type": "timeseries",
