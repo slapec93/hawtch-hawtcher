@@ -167,14 +167,23 @@ firewall-grafana: require-env
 	@bind=$$(sed -n 's/^GRAFANA_BIND=//p' .env | tail -1); \
 	port=$$(sed -n 's/^GRAFANA_PORT=//p' .env | tail -1); port=$${port:-3000}; \
 	cidr=$$(sed -n 's/^GRAFANA_ALLOW_CIDR=//p' .env | tail -1); \
+	old=$$(sudo iptables -S DOCKER-USER 2>/dev/null | grep -oE '\-\-dport [0-9]+ -j HAWTCH-GRAFANA' | grep -oE '[0-9]+' || true); \
+	for o in $$old; do \
+		sudo iptables -D DOCKER-USER -p tcp --dport "$$o" -j HAWTCH-GRAFANA 2>/dev/null \
+			&& echo "  removed previous rule for port $$o"; \
+	done; \
 	if [ "$$bind" = "127.0.0.1" ] || [ -z "$$bind" ]; then \
-		echo "GRAFANA_BIND is $${bind:-127.0.0.1} (loopback) — nothing to filter."; \
-		echo "Docker only publishes on loopback, so the port is already unreachable."; \
+		sudo iptables -F HAWTCH-GRAFANA 2>/dev/null || true; \
+		echo "GRAFANA_BIND=$${bind:-127.0.0.1} (loopback) — docker publishes on loopback"; \
+		echo "only, so nothing is reachable from outside and no filtering is needed."; \
+		echo "Reach it with: ssh -L $$port:localhost:$$port <user>@<host>"; \
 		exit 0; \
 	fi; \
 	if [ -z "$$cidr" ]; then \
-		echo "GRAFANA_ALLOW_CIDR is empty — port $$port is open to the internet."; \
-		echo "Set it in .env (comma-separated) and re-run, or use an SSH tunnel instead."; \
+		echo "REFUSING: GRAFANA_BIND=$$bind exposes port $$port, but GRAFANA_ALLOW_CIDR"; \
+		echo "is empty — that would publish the dashboard to the whole internet over"; \
+		echo "plain HTTP. Set GRAFANA_ALLOW_CIDR in .env (comma-separated), or set"; \
+		echo "GRAFANA_BIND=127.0.0.1 and use an SSH tunnel."; \
 		exit 1; \
 	fi; \
 	sudo iptables -N HAWTCH-GRAFANA 2>/dev/null || true; \
@@ -183,12 +192,18 @@ firewall-grafana: require-env
 		sudo iptables -A HAWTCH-GRAFANA -s "$$c" -j RETURN && echo "  allow $$c"; \
 	done; \
 	sudo iptables -A HAWTCH-GRAFANA -j DROP; \
-	sudo iptables -C DOCKER-USER -p tcp --dport "$$port" -j HAWTCH-GRAFANA 2>/dev/null \
-		|| sudo iptables -I DOCKER-USER 1 -p tcp --dport "$$port" -j HAWTCH-GRAFANA; \
-	echo "  port $$port/tcp restricted to the listed sources (everything else DROPped)"; \
+	sudo iptables -I DOCKER-USER 1 -p tcp --dport "$$port" -j HAWTCH-GRAFANA; \
+	echo "  port $$port/tcp -> HAWTCH-GRAFANA (listed sources RETURN, all else DROP)"; \
+	if command -v ufw >/dev/null && sudo ufw status 2>/dev/null | grep -q "^$$port/tcp"; then \
+		echo; \
+		echo "  NOTE: ufw still lists rules for $$port/tcp. They do nothing — ufw does"; \
+		echo "  not see docker-published traffic — but they make 'ufw status' read as"; \
+		echo "  though the port were filtered there. Remove them with:"; \
+		echo "    sudo ufw status numbered && sudo ufw delete <n>"; \
+	fi; \
 	echo; \
-	echo "  Verify from a non-allowed host: it should TIME OUT, not refuse."; \
-	echo "  Rules are not reboot-persistent — re-run after a restart."
+	echo "  Verify from a NON-allowed network — it must TIME OUT, not show a login."; \
+	echo "  Not reboot-persistent: apt install iptables-persistent && netfilter-persistent save"
 
 # Shows what is actually filtering the published ports, ufw and DOCKER-USER both,
 # because ufw status alone is misleading for containers.
