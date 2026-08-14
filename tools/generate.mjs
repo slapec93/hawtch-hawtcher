@@ -137,7 +137,11 @@ for (const node of enabled) {
     BEE_PASSWORD: '${BEE_PASSWORD}',
     BEE_DATA_DIR: '/home/bee/.bee',
     BEE_CACHE_CAPACITY: String(node.cacheCapacity),
-    BEE_VERBOSITY: node.verbosity,
+    // Overridable from .env without regenerating, because the fleet default is
+    // `warn` and that suppresses every logger.Info line — including chequebook
+    // deployment and sync progress. When a node is misbehaving you want those
+    // back, and the deploy host has no Node toolchain to re-run the generator.
+    BEE_VERBOSITY: `\${BEE_VERBOSITY:-${node.verbosity}}`,
     BEE_SWAP_ENABLE: 'true',
     BEE_STORAGE_INCENTIVES_ENABLE: String(node.incentives),
   }
@@ -293,7 +297,7 @@ for (const [name, spec] of Object.entries(SIDECAR_SPECS)) {
     // Off unless explicitly enabled in .env: auto-buy on a restart loop spends
     // real xBZZ every time.
     POSTAGE_AUTO_BUY: '${POSTAGE_AUTO_BUY:-false}',
-    POSTAGE_SIZE_GB: String(cfg.postage_size_gb ?? 1),
+    POSTAGE_SIZE_MB: String(cfg.postage_size_mb ?? 10),
     POSTAGE_DURATION_DAYS: String(cfg.postage_duration_days ?? 30),
   }
   if (name === 'latency') env.PAYLOAD_BYTES = String(cfg.payload_bytes ?? 102400)

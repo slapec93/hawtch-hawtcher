@@ -48,7 +48,7 @@ export async function ensurePostageBatch(bee: Bee, cfg: PostageConfig, probe: st
     )
   }
 
-  const size = Size.fromGigabytes(cfg.sizeGigabytes)
+  const size = Size.fromMegabytes(cfg.sizeMegabytes)
   const duration = Duration.fromDays(cfg.durationDays)
 
   // Log what it will cost before spending it. On mainnet this is real xBZZ, and
@@ -56,7 +56,7 @@ export async function ensurePostageBatch(bee: Bee, cfg: PostageConfig, probe: st
   try {
     const cost = await bee.getStorageCost(size, duration)
     console.log(
-      `[${probe}] buying ${cfg.sizeGigabytes}GB for ${cfg.durationDays}d ` +
+      `[${probe}] buying ${cfg.sizeMegabytes}MB for ${cfg.durationDays}d ` +
         `— estimated cost ${cost.toSignificantDigits(6)} BZZ`,
     )
   } catch (err) {
@@ -66,6 +66,12 @@ export async function ensurePostageBatch(bee: Bee, cfg: PostageConfig, probe: st
   const batchId = await bee.buyStorage(size, duration, {
     label: `hawtch-${probe}`,
     waitForUsable: true,
+    // MUTABLE, deliberately. Every probe run uploads a unique payload, so an
+    // immutable batch fills monotonically and then starts rejecting uploads —
+    // at ~29 MB/day a depth-19 batch would die in about three days. A mutable
+    // batch recycles stamp slots instead, overwriting the oldest chunks, which
+    // is exactly right here: nobody needs to retrieve last week's random bytes.
+    immutableFlag: false,
   })
   console.log(`[${probe}] bought batch ${batchId.toString()}`)
   return batchId.toString()
@@ -99,10 +105,10 @@ async function findReusableBatch(bee: Bee, cfg: PostageConfig): Promise<PostageB
   const all = await bee.getPostageBatches()
   return all.find((batch) => {
     if (!batch.usable) return false
-    // Leave headroom: a batch that is nearly full will start rejecting uploads
-    // mid-run, which would look like network failures. Also require some TTL, or
-    // the probe adopts a batch that expires under it.
+    // Require some TTL, or the probe adopts a batch that expires under it.
     if (batch.duration.toSeconds() < cfg.minTtlSeconds) return false
+    // Immutable batches must have room left; mutable ones recycle and never do.
+    if (!batch.immutableFlag) return true
     return batch.remainingSize.toBytes() >= cfg.minRemainingBytes
   })
 }
@@ -111,9 +117,12 @@ function assertUsable(batch: PostageBatch, cfg: PostageConfig): void {
   const id = batch.batchID.toString()
   if (!batch.usable) throw new PostageError(`batch ${id} is not usable yet`)
 
-  if (batch.remainingSize.toBytes() < cfg.minRemainingBytes) {
+  // Only immutable batches can run out. A mutable batch sitting at full
+  // utilization is working as intended — it overwrites its oldest slots — so
+  // demanding free space there would reject a perfectly healthy batch.
+  if (batch.immutableFlag && batch.remainingSize.toBytes() < cfg.minRemainingBytes) {
     throw new PostageError(
-      `batch ${id} has only ${batch.remainingSize.toFormattedString()} left ` +
+      `immutable batch ${id} has only ${batch.remainingSize.toFormattedString()} left ` +
         `(minimum ${Size.fromBytes(cfg.minRemainingBytes).toFormattedString()}); uploads will start failing`,
     )
   }

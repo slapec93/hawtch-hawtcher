@@ -226,6 +226,12 @@ check-env: require-env
 	fi; \
 	if [ -z "$$rpc" ]; then \
 		echo "  ✗ GNOSIS_RPC_ENDPOINT is empty — bee will not start"; fail=1; \
+	elif ! echo "$$rpc" | grep -qE '^(http|https|ws|wss)://'; then \
+		echo "  ✗ GNOSIS_RPC_ENDPOINT=$$rpc has no scheme."; \
+		echo "    bee dials via go-ethereum's rpc.DialOptions, which picks the transport"; \
+		echo "    from the scheme — with none it tries to open the value as an IPC socket"; \
+		echo "    path and fails. Write it as http://host:port (curl tolerates the omission,"; \
+		echo "    bee does not)."; fail=1; \
 	else \
 		chain=$$(curl -s -m 10 -X POST -H 'Content-Type: application/json' \
 			--data '{"jsonrpc":"2.0","method":"eth_chainId","params":[],"id":1}' "$$rpc" \

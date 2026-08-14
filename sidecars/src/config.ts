@@ -58,7 +58,7 @@ export interface PostageConfig {
   // `amount` depends on the current chain price, so a hardcoded value is wrong
   // on any day but the one it was written — bee rejects it outright with
   // "Amount has to be at least N".
-  sizeGigabytes: number
+  sizeMegabytes: number
   durationDays: number
   minRemainingBytes: number
   minTtlSeconds: number
@@ -92,7 +92,12 @@ export function loadCommon(defaults: { probe: string; metricsPort: number }): Co
       // Deliberately off by default. A crash-looping probe with auto-buy enabled
       // would purchase a fresh batch on every restart, burning real xBZZ.
       autoBuy: bool('POSTAGE_AUTO_BUY', false),
-      sizeGigabytes: int('POSTAGE_SIZE_GB', 1),
+      // Megabyte granularity, and small by default. bee-js maps a requested
+      // size to a batch depth, and depth is what you pay for: 1 GB lands on
+      // depth 21 (~7.9 xBZZ for 30d at current price) while 10 MB lands on the
+      // practical floor of depth 19 (~2.0 xBZZ). The probes upload kilobytes, so
+      // the floor is right; batches are mutable and recycle their slots.
+      sizeMegabytes: int('POSTAGE_SIZE_MB', 10),
       durationDays: int('POSTAGE_DURATION_DAYS', 30),
       // Headroom so a batch does not fill or expire mid-measurement, which would
       // surface as network failures rather than a postage problem.

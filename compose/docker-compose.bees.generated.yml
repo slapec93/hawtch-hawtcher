@@ -16,7 +16,7 @@ services:
       BEE_PASSWORD: ${BEE_PASSWORD}
       BEE_DATA_DIR: /home/bee/.bee
       BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: warn
+      BEE_VERBOSITY: ${BEE_VERBOSITY:-warn}
       BEE_SWAP_ENABLE: 'true'
       BEE_STORAGE_INCENTIVES_ENABLE: 'false'
       BEE_TARGET_NEIGHBORHOOD: '00000000'
@@ -47,7 +47,7 @@ services:
       BEE_PASSWORD: ${BEE_PASSWORD}
       BEE_DATA_DIR: /home/bee/.bee
       BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: warn
+      BEE_VERBOSITY: ${BEE_VERBOSITY:-warn}
       BEE_SWAP_ENABLE: 'true'
       BEE_STORAGE_INCENTIVES_ENABLE: 'false'
       BEE_TARGET_NEIGHBORHOOD: '01000000'
@@ -78,7 +78,7 @@ services:
       BEE_PASSWORD: ${BEE_PASSWORD}
       BEE_DATA_DIR: /home/bee/.bee
       BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: warn
+      BEE_VERBOSITY: ${BEE_VERBOSITY:-warn}
       BEE_SWAP_ENABLE: 'true'
       BEE_STORAGE_INCENTIVES_ENABLE: 'false'
     volumes:
@@ -107,7 +107,7 @@ services:
       BEE_PASSWORD: ${BEE_PASSWORD}
       BEE_DATA_DIR: /home/bee/.bee
       BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: warn
+      BEE_VERBOSITY: ${BEE_VERBOSITY:-warn}
       BEE_SWAP_ENABLE: 'true'
       BEE_STORAGE_INCENTIVES_ENABLE: 'false'
     volumes:
@@ -136,7 +136,7 @@ services:
       BEE_PASSWORD: ${BEE_PASSWORD}
       BEE_DATA_DIR: /home/bee/.bee
       BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: warn
+      BEE_VERBOSITY: ${BEE_VERBOSITY:-warn}
       BEE_SWAP_ENABLE: 'true'
       BEE_STORAGE_INCENTIVES_ENABLE: 'false'
     volumes:
@@ -165,7 +165,7 @@ services:
       BEE_PASSWORD: ${BEE_PASSWORD}
       BEE_DATA_DIR: /home/bee/.bee
       BEE_CACHE_CAPACITY: '1000000'
-      BEE_VERBOSITY: warn
+      BEE_VERBOSITY: ${BEE_VERBOSITY:-warn}
       BEE_SWAP_ENABLE: 'true'
       BEE_STORAGE_INCENTIVES_ENABLE: 'false'
     volumes:

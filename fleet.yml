@@ -66,6 +66,12 @@ sidecars:
     metrics_port: 9101
     interval_seconds: 300
     payload_bytes: 102400
+    # Batch size maps to a depth, and depth is what costs money: 1 GB lands on
+    # depth 21 (~7.9 xBZZ for 30d at current mainnet price) while 10 MB lands on
+    # the practical floor of depth 19 (~2.0 xBZZ). The probes upload kilobytes,
+    # and their batches are mutable so slots recycle rather than filling up.
+    postage_size_mb: 10
+    postage_duration_days: 30
 
   # Feed propagation timing (nodes 5-6).
   beefeeder:
@@ -73,6 +79,8 @@ sidecars:
     metrics_port: 9102
     interval_seconds: 300
     feed_topic: hawtch-hawtcher/beefeeder
+    postage_size_mb: 10
+    postage_duration_days: 30
 
 # api_port / p2p_port are assigned automatically from port_base upward when
 # omitted (node i gets api = port_base + 2i, p2p = api + 1). Container and host
