@@ -1,4 +1,4 @@
-# hawtch-hawtcher, the Bee watcher
+# <img src="assets/icon.png" width="30" align="top" alt=""> Hawtch-Hawtcher, the Bee watcher
 
 Monitoring suite for **Swarm mainnet**, driven by a purpose-built Bee probe fleet.
 
