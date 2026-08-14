@@ -191,8 +191,20 @@ GRAFANA_ALLOW_CIDR=203.0.113.0/24   # strongly recommended; empty means any sour
 
 ```bash
 make up-observer          # recreate with the new binding
-make firewall-grafana     # open the port, honouring GRAFANA_ALLOW_CIDR
+make firewall-grafana     # restrict the port to GRAFANA_ALLOW_CIDR
+make firewall-status      # confirm what is actually filtering
 ```
+
+**ufw does not filter Docker-published ports.** Docker inserts its own rules into
+the `DOCKER` chain, reached via `FORWARD`, which ufw's `INPUT` rules and even its
+default-deny policy never see. A `ufw allow from X to any port 3000` rule for a
+published container port restricts nothing — the port stays open to the internet
+while `ufw status` implies otherwise. `firewall-grafana` therefore writes to the
+`DOCKER-USER` chain, which Docker evaluates first and never rewrites.
+
+Two consequences: verify from a **non-allowed** host (it should time out, not
+refuse), and re-run after a reboot — iptables rules are not persistent unless you
+install `netfilter-persistent`.
 
 **Prometheus is not exposable, deliberately.** Its port binding is hardcoded to `127.0.0.1` and takes no variable, because Prometheus has **no authentication at all** — anyone who reaches it can read every metric and enumerate the fleet. Grafana is the front door; use a tunnel for ad-hoc PromQL.
 

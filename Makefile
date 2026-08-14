@@ -20,7 +20,7 @@ ENABLED := $(shell cat compose/enabled-nodes.generated.txt 2>/dev/null)
 
 TEST_COMPOSE := docker compose -p hawtch-test -f compose/docker-compose.test.yml
 
-.PHONY: help install generate check-generated check-env up-all firewall firewall-grafana network volumes require-env preflight restore destroy up up-observer up-bees up-staggered up-sidecars down stop ps logs validate addresses backup-keys reload-prometheus test-up test-check test-down test-logs test-probes
+.PHONY: help install generate check-generated check-env up-all firewall firewall-grafana firewall-status network volumes require-env preflight restore destroy up up-observer up-bees up-staggered up-sidecars down stop ps logs validate addresses backup-keys reload-prometheus test-up test-check test-down test-logs test-probes
 
 help:
 	@echo "Setup"
@@ -31,7 +31,8 @@ help:
 	@echo "  check-env          validate PUBLIC_IP, BEE_PASSWORD and the RPC chain id"
 	@echo "  network            create the shared docker network"
 	@echo "  firewall           open only the P2P ports, from fleet.yml"
-	@echo "  firewall-grafana   open the Grafana port (opt-in; see .env)"
+	@echo "  firewall-grafana   restrict the Grafana port via DOCKER-USER (see .env)"
+	@echo "  firewall-status    show ufw AND DOCKER-USER rules (ufw alone misleads)"
 	@echo "  preflight          assert no fleet port is already bound"
 	@echo ""
 	@echo "Run"
@@ -149,33 +150,57 @@ firewall: check-generated
 	@echo "bound to 127.0.0.1. Reach Grafana/Prometheus over an SSH tunnel:"
 	@echo "  ssh -L 3000:localhost:3000 -L 9090:localhost:9090 <host>"
 
-# Opens the Grafana port, honouring GRAFANA_ALLOW_CIDR if set. Separate from
-# `firewall` because exposing a dashboard is a deliberate decision, not part of
-# routine setup.
+# Restricts the Grafana port to GRAFANA_ALLOW_CIDR.
+#
+# NOT via ufw. Docker publishes ports by inserting its own rules into the DOCKER
+# chain, reached through FORWARD — ufw's INPUT rules and even its default-deny
+# policy never see that traffic. A `ufw allow from X` rule for a Docker-published
+# port therefore restricts nothing: the port stays open to the whole internet.
+#
+# DOCKER-USER is the chain Docker evaluates FIRST and never rewrites, so it is
+# the only supported place to filter published ports. Rules live in a dedicated
+# HAWTCH-GRAFANA chain so re-running this is idempotent.
+#
+# Caveat: iptables rules do not survive a reboot unless netfilter-persistent is
+# installed. Re-run this after rebooting, or verify with `make firewall-status`.
 firewall-grafana: require-env
-	@command -v ufw >/dev/null || { echo "ufw not installed (run deploy/bootstrap.sh)"; exit 1; }
 	@bind=$$(sed -n 's/^GRAFANA_BIND=//p' .env | tail -1); \
 	port=$$(sed -n 's/^GRAFANA_PORT=//p' .env | tail -1); port=$${port:-3000}; \
 	cidr=$$(sed -n 's/^GRAFANA_ALLOW_CIDR=//p' .env | tail -1); \
 	if [ "$$bind" = "127.0.0.1" ] || [ -z "$$bind" ]; then \
-		echo "GRAFANA_BIND is $${bind:-127.0.0.1} (loopback) — nothing to open."; \
-		echo "Set GRAFANA_BIND=0.0.0.0 in .env and re-run 'make up-observer' first."; \
+		echo "GRAFANA_BIND is $${bind:-127.0.0.1} (loopback) — nothing to filter."; \
+		echo "Docker only publishes on loopback, so the port is already unreachable."; \
 		exit 0; \
 	fi; \
-	if [ -n "$$cidr" ]; then \
-		for c in $$(echo "$$cidr" | tr ',' ' '); do \
-			sudo ufw allow from "$$c" to any port "$$port" proto tcp comment "hawtch grafana" >/dev/null \
-				&& echo "  allowed $$port/tcp from $$c"; \
-		done; \
-		echo "  (every other source is denied by the default-deny policy)"; \
-	else \
-		sudo ufw allow "$$port"/tcp comment "hawtch grafana (any source)" >/dev/null \
-			&& echo "  allowed $$port/tcp from ANY source"; \
-		echo; \
-		echo "  WARNING: open to the internet over plain HTTP. The admin password"; \
-		echo "  crosses the network in cleartext. Set GRAFANA_ALLOW_CIDR, or put"; \
-		echo "  Grafana behind TLS — see DEPLOY.md."; \
-	fi
+	if [ -z "$$cidr" ]; then \
+		echo "GRAFANA_ALLOW_CIDR is empty — port $$port is open to the internet."; \
+		echo "Set it in .env (comma-separated) and re-run, or use an SSH tunnel instead."; \
+		exit 1; \
+	fi; \
+	sudo iptables -N HAWTCH-GRAFANA 2>/dev/null || true; \
+	sudo iptables -F HAWTCH-GRAFANA; \
+	for c in $$(echo "$$cidr" | tr ',' ' '); do \
+		sudo iptables -A HAWTCH-GRAFANA -s "$$c" -j RETURN && echo "  allow $$c"; \
+	done; \
+	sudo iptables -A HAWTCH-GRAFANA -j DROP; \
+	sudo iptables -C DOCKER-USER -p tcp --dport "$$port" -j HAWTCH-GRAFANA 2>/dev/null \
+		|| sudo iptables -I DOCKER-USER 1 -p tcp --dport "$$port" -j HAWTCH-GRAFANA; \
+	echo "  port $$port/tcp restricted to the listed sources (everything else DROPped)"; \
+	echo; \
+	echo "  Verify from a non-allowed host: it should TIME OUT, not refuse."; \
+	echo "  Rules are not reboot-persistent — re-run after a restart."
+
+# Shows what is actually filtering the published ports, ufw and DOCKER-USER both,
+# because ufw status alone is misleading for containers.
+firewall-status:
+	@echo "== ufw (does NOT apply to docker-published ports) =="
+	@sudo ufw status | sed 's/^/  /'
+	@echo
+	@echo "== DOCKER-USER (this is what filters published ports) =="
+	@sudo iptables -L DOCKER-USER -n --line-numbers | sed 's/^/  /'
+	@echo
+	@echo "== HAWTCH-GRAFANA =="
+	@sudo iptables -L HAWTCH-GRAFANA -n 2>/dev/null | sed 's/^/  /' || echo "  (chain does not exist — run make firewall-grafana)"
 
 require-env:
 	@test -f .env || { \
