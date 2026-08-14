@@ -8,6 +8,14 @@ set -uo pipefail
 
 PROM=http://127.0.0.1:9090
 GRAFANA=http://127.0.0.1:3000
+
+# Take the Grafana password from .env unless it is already exported. Without this
+# the API calls below fall back to admin:admin, get a 401, and report the
+# dashboard and datasource as "missing" when the real problem is authentication.
+if [ -z "${GRAFANA_ADMIN_PASSWORD:-}" ] && [ -f .env ]; then
+  GRAFANA_ADMIN_PASSWORD=$(sed -n 's/^GRAFANA_ADMIN_PASSWORD=//p' .env | tail -1)
+fi
+GRAFANA_ADMIN_PASSWORD="${GRAFANA_ADMIN_PASSWORD:-admin}"
 pass=0
 fail=0
 
@@ -92,13 +100,22 @@ if curl -fsS "$GRAFANA/api/health" >/dev/null 2>&1; then
   ok "healthy at $GRAFANA"
   # /api/search needs auth — without credentials this returns 401 and the check
   # can never genuinely pass.
-  db=$(curl -fsS -u "admin:${GRAFANA_ADMIN_PASSWORD:-admin}" "$GRAFANA/api/search?query=Fleet" 2>/dev/null | pq "len(d)")
-  if [ "${db:-0}" -ge 1 ]; then
-    ok "fleet dashboard provisioned"
+  # Distinguish "cannot authenticate" from "not provisioned" — they need very
+  # different fixes, and reporting the first as the second sends you hunting
+  # through provisioning config for a password problem.
+  code=$(curl -s -o /dev/null -w '%{http_code}' -u "admin:$GRAFANA_ADMIN_PASSWORD" "$GRAFANA/api/search?query=Fleet")
+  if [ "$code" = "401" ] || [ "$code" = "403" ]; then
+    bad "cannot authenticate to Grafana (HTTP $code) — GRAFANA_ADMIN_PASSWORD does not match"
+    info "on a deployed host the password lives in .env; this script now reads it from there"
   else
-    bad "fleet dashboard not found (provisioning polls every 30s; check GRAFANA_ADMIN_PASSWORD)"
+    db=$(curl -fsS -u "admin:$GRAFANA_ADMIN_PASSWORD" "$GRAFANA/api/search?query=Fleet" 2>/dev/null | pq "len(d)")
+    if [ "${db:-0}" -ge 1 ]; then
+      ok "fleet dashboard provisioned"
+    else
+      bad "fleet dashboard not found (provisioning polls every 30s)"
+    fi
   fi
-  ds=$(curl -fsS -u "admin:${GRAFANA_ADMIN_PASSWORD:-admin}" "$GRAFANA/api/datasources" 2>/dev/null | pq "sum(1 for x in d if x['uid']=='hawtch-prom')")
+  ds=$(curl -fsS -u "admin:$GRAFANA_ADMIN_PASSWORD" "$GRAFANA/api/datasources" 2>/dev/null | pq "sum(1 for x in d if x['uid']=='hawtch-prom')")
   [ "${ds:-0}" = "1" ] && ok "prometheus datasource provisioned (uid hawtch-prom)" \
     || bad "datasource uid hawtch-prom missing — provisioned dashboards will not resolve"
 else

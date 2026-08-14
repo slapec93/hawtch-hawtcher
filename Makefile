@@ -55,7 +55,7 @@ help:
 	@echo "  ps                 container status"
 	@echo "  logs               follow all logs"
 	@echo "  addresses          print addresses to fund, and verify neighborhoods"
-	@echo "  reload-prometheus  reload prometheus RULES/TARGETS (not prometheus.yml)"
+	@echo "  reload-prometheus  reload prometheus RULES/TARGETS (for prometheus.yml use up-observer)"
 	@echo ""
 	@echo "Funded-wallet safety"
 	@echo "  volumes            create the external node volumes (compose cannot delete these)"
@@ -185,7 +185,15 @@ require-env:
 	}
 
 up-observer: require-env check-generated network volumes
-	$(COMPOSE) up -d prometheus grafana cadvisor node-exporter
+	$(COMPOSE) up -d grafana cadvisor node-exporter
+	@# Prometheus is force-recreated every time, deliberately. prometheus.yml is a
+	@# single-file bind mount, and editing it (or pulling a new one) creates a new
+	@# inode the running container never sees — compose considers the service
+	@# unchanged and leaves stale config running silently. Recreating is cheap: the
+	@# TSDB lives in a volume, so only a few seconds of scrapes are lost.
+	$(COMPOSE) up -d --force-recreate prometheus
+	@echo
+	@echo "  prometheus recreated (picks up prometheus.yml changes)"
 
 # Refuses to start if any fleet port is already bound — most likely a stray
 # bee-factory cluster, or a previous run still up. Starting anyway would produce
