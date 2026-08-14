@@ -316,6 +316,10 @@ for (const [name, spec] of Object.entries(SIDECAR_SPECS)) {
     command: ['node', spec.entrypoint],
     environment: env,
     depends_on: [uploader.name, downloader.name],
+    // Published on loopback so the probe can be inspected from the host with
+    // curl. Prometheus scrapes over the docker network and does not need this,
+    // but "why is there no data?" is much harder to answer without it.
+    ports: [`127.0.0.1:${metricsPort}:${metricsPort}`],
     networks: [fleet.network],
   }
 
