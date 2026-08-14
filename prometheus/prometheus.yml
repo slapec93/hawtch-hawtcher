@@ -33,6 +33,20 @@ scrape_configs:
       - source_labels: [container_label_hawtch_role]
         target_label: role
         action: replace
+      # Fallback: derive `node` from the container name. cAdvisor needs explicit
+      # flags to export container labels at all, so this keeps per-node CPU working
+      # even if those flags are missing or the cAdvisor version changes them. Runs
+      # after the label rules, but only sets `node` when it is still empty.
+      - source_labels: [node, name]
+        regex: ';hawtch-(bee-[0-9]+)'
+        target_label: node
+        replacement: '$1'
+        action: replace
+      - source_labels: [node, name]
+        regex: ';hawtch-sidecar-([a-z]+)'
+        target_label: probe
+        replacement: '$1'
+        action: replace
 
   # Host CPU, load, RAM, and disk saturation (v0's key confound — PLAN.md §4.1).
   - job_name: node

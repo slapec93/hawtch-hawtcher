@@ -55,9 +55,23 @@ services:
     container_name: hawtch-cadvisor
     restart: unless-stopped
     privileged: true
+    command:
+      # Without these, cAdvisor reports cgroup paths only — no container names and
+      # no container labels — so per-node CPU attribution is impossible.
+      #   store_container_labels=false is REQUIRED for the whitelist to take
+      #   effect (cAdvisor's own help says so). The whitelisted labels arrive as
+      #   container_label_hawtch_node / _role, which prometheus.yml maps onto our
+      #   own `node` and `role` labels.
+      - --store_container_labels=false
+      - --whitelisted_container_labels=hawtch.node,hawtch.role
+      # Skip the cgroup-root pseudo-containers: fewer useless series to store.
+      - --docker_only=true
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
+      # Explicit: cAdvisor queries Docker over this socket for container names and
+      # labels. Without it you get anonymous cgroup paths.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
     networks: [hawtch-test]

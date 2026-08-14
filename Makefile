@@ -20,7 +20,7 @@ ENABLED := $(shell cat compose/enabled-nodes.generated.txt 2>/dev/null)
 
 TEST_COMPOSE := docker compose -p hawtch-test -f compose/docker-compose.test.yml
 
-.PHONY: help install generate check-generated check-env firewall firewall-grafana network volumes require-env preflight restore destroy up up-observer up-bees up-staggered up-sidecars down stop ps logs validate addresses backup-keys reload-prometheus test-up test-check test-down test-logs test-probes
+.PHONY: help install generate check-generated check-env up-all firewall firewall-grafana network volumes require-env preflight restore destroy up up-observer up-bees up-staggered up-sidecars down stop ps logs validate addresses backup-keys reload-prometheus test-up test-check test-down test-logs test-probes
 
 help:
 	@echo "Setup"
@@ -39,7 +39,8 @@ help:
 	@echo "  up-bees            all enabled bee nodes at once"
 	@echo "  up-staggered       bee nodes one at a time (preferred: see PLAN.md 4.1)"
 	@echo "  up-sidecars        active probes (needs funded nodes + postage)"
-	@echo "  up                 observer + staggered nodes"
+	@echo "  up                 observer + staggered nodes (first run)"
+	@echo "  up-all             observer + nodes, no wait (use after 'make down')"
 	@echo "  down               stop and remove containers (volumes kept)"
 	@echo "  stop               stop containers, leave them in place"
 	@echo ""
@@ -272,6 +273,13 @@ up-sidecars: require-env check-generated network
 
 up: up-observer up-staggered
 
+# Everything back, without the 25-minute staggered wait. This is the right target
+# after a `make down`: staggering only matters for a first sync, whereas leaving
+# collection stopped costs metrics that can never be recovered.
+up-all: up-observer up-bees
+	@echo
+	@echo "observer + $(words $(ENABLED)) node(s) running; collection resumed."
+
 # Stops and removes containers. Volumes are external, so they survive this even
 # if someone adds -v by hand. An identity snapshot is taken first regardless:
 # the cheapest moment to have a backup is just before touching anything.
@@ -284,6 +292,12 @@ down: backup-keys
 	@echo "WARNING: with no container referencing them, these volumes are now"
 	@echo "'unused' and 'docker volume prune' WOULD delete them. Prefer 'make stop'"
 	@echo "over 'make down' while the fleet is funded."
+	@echo
+	@echo "COLLECTION HAS STOPPED. Prometheus and the exporters were removed too,"
+	@echo "and Prometheus cannot backfill — every minute from now until you restart"
+	@echo "it is a permanent hole in the metrics. Restore everything with:"
+	@echo "  make up-all      (observer + nodes, no staggered wait)"
+	@echo "Note 'make up-bees' alone does NOT restart collection."
 
 stop:
 	$(COMPOSE) stop
