@@ -400,17 +400,17 @@
     },
     {
       "type": "timeseries",
-      "title": "Host load & disk busy \u2014 v0 confound watch",
-      "description": "Host load is NOT attributable to a single node in v0 \u2014 use it as a saturation signal only, and cAdvisor per-container CPU for attribution. Load above the dashed core-count line means the box is oversubscribed. Load counts I/O waiters too, so high load with an idle disk points at CPU rather than storage. Disk busy above ~90% marks pullsync samples as contended.",
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 32
-      },
+      "title": "Host load",
       "datasource": {
         "type": "prometheus",
         "uid": "hawtch-prom"
+      },
+      "description": "Runnable + I/O-waiting processes, averaged over 1 and 15 minutes. Above the dashed core-count line the box is oversubscribed. Load counts I/O waiters too, so compare with the disk panel beside it: high load with an idle disk means CPU-bound, not storage-bound. NOT attributable to a single node in v0 \u2014 six containers plus the observer contribute. Use per-container CPU for that.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
       },
       "targets": [
         {
@@ -425,17 +425,13 @@
         },
         {
           "refId": "C",
-          "expr": "100 * rate(node_disk_io_time_seconds_total{device!~\"sr.*|loop.*|dm-.*|ram.*\"}[5m])",
-          "legendFormat": "disk busy % {{device}}"
-        },
-        {
-          "refId": "D",
           "expr": "count(count by (cpu) (node_cpu_seconds_total))",
-          "legendFormat": "cores (saturation line)"
+          "legendFormat": "cores"
         }
       ],
       "fieldConfig": {
         "defaults": {
+          "min": 0,
           "custom": {
             "lineWidth": 1,
             "fillOpacity": 0
@@ -444,28 +440,8 @@
         "overrides": [
           {
             "matcher": {
-              "id": "byRegexp",
-              "options": "disk busy.*"
-            },
-            "properties": [
-              {
-                "id": "custom.axisPlacement",
-                "value": "right"
-              },
-              {
-                "id": "unit",
-                "value": "percent"
-              },
-              {
-                "id": "custom.fillOpacity",
-                "value": 10
-              }
-            ]
-          },
-          {
-            "matcher": {
               "id": "byName",
-              "options": "cores (saturation line)"
+              "options": "cores"
             },
             "properties": [
               {
@@ -479,10 +455,6 @@
                 }
               },
               {
-                "id": "custom.lineWidth",
-                "value": 2
-              },
-              {
                 "id": "color",
                 "value": {
                   "mode": "fixed",
@@ -490,12 +462,78 @@
                 }
               },
               {
-                "id": "custom.fillOpacity",
-                "value": 0
+                "id": "custom.lineWidth",
+                "value": 2
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "load15"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "yellow"
+                }
               }
             ]
           }
         ]
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Disk busy %",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hawtch-prom"
+      },
+      "description": "Fraction of wall-clock time each device had at least one request in flight. 100% means saturated and queueing. Sustained values near 100% during pullsync mean the measured pullsync rate partly describes our own I/O contention rather than the network (PLAN.md 4.1) \u2014 treat those samples as suspect. Pseudo-devices (loop, dm, sr, ram) are filtered out.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 32
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "100 * rate(node_disk_io_time_seconds_total{device!~\"sr.*|loop.*|dm-.*|ram.*\"}[5m])",
+          "legendFormat": "{{device}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 75
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
+        "overrides": []
       }
     },
     {
