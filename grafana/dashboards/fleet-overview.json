@@ -162,7 +162,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "100 * bee_localstore_reserve_size{node=~\"$node\"} / on(node) hawtch:reserve_capacity_chunks",
+          "expr": "100 * bee_localstore_reserve_size{node=~\"$node\", node_type=\"full\"} / on(node) hawtch:reserve_capacity_chunks",
           "legendFormat": "{{node}}"
         }
       ],
@@ -180,38 +180,9 @@
       }
     },
     {
-      "type": "stat",
-      "title": "Storage radius",
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 32
-      },
-      "datasource": {
-        "type": "prometheus",
-        "uid": "hawtch-prom"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "expr": "bee_kademlia_current_storage_depth{node=~\"$node\"}",
-          "legendFormat": "{{node}}",
-          "instant": true
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "decimals": 0
-        },
-        "overrides": []
-      },
-      "description": "Current storage depth per node. Rises when the reserve hits its ceiling and evicts."
-    },
-    {
       "type": "timeseries",
       "title": "Pullsync rate \u2014 chunks delivered/s",
-      "description": "In v0 all nodes share one disk. Read this against the disk-busy panel below: contended samples partly describe our own I/O, not the network.",
+      "description": "Gross chunks pulled in per second, full nodes only \u2014 light nodes do not run the puller. NOTE this is gross inbound, not net reserve growth: most delivered chunks replace ones that expired or were evicted, so the reserve grows far more slowly than this rate suggests. Compare with the runway panel. Read against disk busy below: contended samples partly describe our own I/O rather than the network.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -225,7 +196,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "rate(bee_pullsync_chunks_delivered{node=~\"$node\"}[5m])",
+          "expr": "rate(bee_pullsync_chunks_delivered{node=~\"$node\", node_type=\"full\"}[5m])",
           "legendFormat": "{{node}}"
         }
       ],
@@ -242,8 +213,8 @@
     },
     {
       "type": "timeseries",
-      "title": "Reserve runway (days to ceiling)",
-      "description": "Projection from the 6h fill slope. Meaningless during warmup and while the reserve is shrinking.",
+      "title": "Reserve runway \u2014 time to ceiling",
+      "description": "Free reserve space divided by the fill rate observed over 6h, i.e. an estimate of when the reserve hits its ceiling and the node evicts, stepping storage radius up by one. Linear extrapolation, so it moves with upload activity. Blank while the reserve is shrinking. Meaningless during initial sync, which fills far faster than steady-state traffic. Axis auto-scales: values over 7 days display as weeks.",
       "gridPos": {
         "h": 8,
         "w": 12,
@@ -368,13 +339,74 @@
     },
     {
       "type": "timeseries",
+      "title": "Chunks arriving \u2014 pushsync received",
+      "description": "What the network is asking these nodes to STORE, as opposed to what they send. 'received' is every inbound push; 'stored' is chunks this node is the final destination for (it is in the target neighborhood); 'forwarded' is chunks passed onward. An upload elsewhere on mainnet shows up here, diluted by 1/2^radius \u2014 at radius 9 only ~1/512 of any upload targets a given neighborhood, so ~1 GiB uploaded over a few minutes is the smallest thing clearly visible above baseline.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hawtch-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(bee_pushsync_total_received{node=~\"$node\"}[5m])",
+          "legendFormat": "{{node}} received"
+        },
+        {
+          "refId": "B",
+          "expr": "rate(bee_pushsync_storer{node=~\"$node\"}[5m])",
+          "legendFormat": "{{node}} stored"
+        },
+        {
+          "refId": "C",
+          "expr": "rate(bee_pushsync_forwarder{node=~\"$node\"}[5m])",
+          "legendFormat": "{{node}} forwarded"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "cps",
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 5
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*forwarded"
+            },
+            "properties": [
+              {
+                "id": "custom.lineStyle",
+                "value": {
+                  "fill": "dash",
+                  "dash": [
+                    6,
+                    6
+                  ]
+                }
+              }
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "type": "timeseries",
       "title": "Host load & disk busy \u2014 v0 confound watch",
       "description": "Host load is NOT attributable to a single node in v0 \u2014 use it as a saturation signal only, and cAdvisor per-container CPU for attribution. Load above the dashed core-count line means the box is oversubscribed. Load counts I/O waiters too, so high load with an idle disk points at CPU rather than storage. Disk busy above ~90% marks pullsync samples as contended.",
       "gridPos": {
         "h": 8,
         "w": 24,
         "x": 0,
-        "y": 24
+        "y": 32
       },
       "datasource": {
         "type": "prometheus",
@@ -465,6 +497,35 @@
           }
         ]
       }
+    },
+    {
+      "type": "stat",
+      "title": "Storage radius",
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 40
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "hawtch-prom"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "bee_kademlia_current_storage_depth{node=~\"$node\"}",
+          "legendFormat": "{{node}}",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "description": "Current storage depth per node. Rises when the reserve hits its ceiling and evicts."
     }
   ]
 }
