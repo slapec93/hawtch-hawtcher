@@ -36,7 +36,7 @@
   "panels": [
     {
       "type": "stat",
-      "title": "Our fleet \u2014 nodes reporting / ready / synced",
+      "title": "Fleet readiness",
       "gridPos": {
         "h": 8,
         "w": 4,
@@ -63,7 +63,13 @@
         {
           "refId": "C",
           "expr": "count(bee_init_full_sync_duration_minutes_count >= 1)",
-          "legendFormat": "synced",
+          "legendFormat": "full nodes synced",
+          "instant": true
+        },
+        {
+          "refId": "D",
+          "expr": "count(up{job=\"bee\", node_type=\"full\"} == 1)",
+          "legendFormat": "full nodes total",
           "instant": true
         }
       ],
@@ -87,10 +93,10 @@
         },
         "overrides": []
       },
-      "description": "Counts OUR probe fleet, not the Swarm network. 'reporting' = prometheus scraped it (true even while the node is stuck in the funding loop or returning 503, since /metrics sits outside bee's sync gate). 'warmed up' and 'synced' come from bee's own one-shot histograms, observed only when it logs 'node warmup complete' and when full sync finishes \u2014 so they are the honest readiness signals. For network-wide peer counts see the peers panel.",
+      "description": "Counts OUR probe fleet, not the Swarm network. 'reporting' = prometheus scraped it, which is true even while a node is stuck in the funding loop or returning 503, because /metrics sits outside bee's sync gate. 'warmed up' and 'full nodes synced' come from bee's own one-shot histograms, observed when it logs 'node warmup complete' and 'full sync done'. Only FULL nodes run the puller, so only they can ever report full sync \u2014 compare against 'full nodes total', not against 'reporting'. For network-wide peer counts see the peers panel.",
       "options": {
         "textMode": "value_and_name",
-        "orientation": "vertical",
+        "orientation": "horizontal",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -99,7 +105,8 @@
           "values": false
         },
         "colorMode": "value",
-        "graphMode": "none"
+        "graphMode": "none",
+        "justifyMode": "auto"
       }
     },
     {

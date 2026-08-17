@@ -18,7 +18,7 @@
       "title": "Time since last success",
       "description": "A probe can be up and failing every run, so this \u2014 not `up` \u2014 is the health signal. Clamped at 0 because the probe stamps the timestamp from its own clock. 'never succeeded' means the probe is running (or was) but has not completed a single successful run; a genuinely absent probe shows no failure count either.",
       "gridPos": {
-        "h": 5,
+        "h": 9,
         "w": 6,
         "x": 0,
         "y": 0
@@ -31,13 +31,13 @@
         {
           "refId": "A",
           "expr": "clamp_min(time() - hawtch_probe_last_success_timestamp_seconds, 0)",
-          "legendFormat": "{{probe}}",
+          "legendFormat": "{{probe}} age",
           "instant": true
         },
         {
           "refId": "B",
           "expr": "sum by (probe) (hawtch_probe_runs_total{result=\"failure\"})",
-          "legendFormat": "{{probe}} failed runs",
+          "legendFormat": "{{probe}} failures",
           "instant": true
         }
       ],
@@ -64,11 +64,52 @@
           },
           "noValue": "never succeeded"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*failures"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "none"
+              },
+              {
+                "id": "decimals",
+                "value": 0
+              },
+              {
+                "id": "noValue",
+                "value": "0"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "green",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 1
+                    },
+                    {
+                      "color": "red",
+                      "value": 10
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        ]
       },
       "options": {
         "textMode": "value_and_name",
-        "orientation": "vertical",
+        "orientation": "auto",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -77,7 +118,8 @@
           "values": false
         },
         "colorMode": "value",
-        "graphMode": "none"
+        "graphMode": "none",
+        "justifyMode": "auto"
       }
     },
     {
